@@ -1,0 +1,37 @@
+{
+  "name": "tweetchain",
+  "version": "0.0.1",
+  "description": "#TwitterCoin tweetchain.info block explorer",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node_modules/.bin/babel-node src/index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "TwitterCoin",
+    "tweetchain",
+    "Twitter",
+    "tweet",
+    "block",
+    "explorer",
+    "blockchain"
+  ],
+  "author": "Daniel Kelly",
+  "license": "ISC",
+  "dependencies": {
+    "babel-eslint": "^8.0.2",
+    "babel-loader": "^7.1.2",
+    "express": "^4.16.2",
+    "sequelize": "^4.22.5",
+    "sqlite3": "^3.1.13",
+    "twitter": "^1.7.1",
+    "uuid": "^3.1.0"
+  },
+  "devDependencies": {
+    "babel-cli": "^6.26.0",
+    "babel-core": "^6.26.0",
+    "babel-polyfill": "^6.26.0",
+    "babel-preset-env": "^1.6.1",
+    "eslint": "^4.10.0"
+  }
+}
