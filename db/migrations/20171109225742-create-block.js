@@ -8,11 +8,27 @@ module.exports = {
 			},
 			Block_id: {
 				type: DataTypes.STRING(64),
+				allowNull: true
+			},
+			Tweeter_id: {
+				type: DataTypes.STRING(64),
+				allowNull: false
+			},
+			protocol: {
+				type: DataTypes.INTEGER,
 				allowNull: false
 			},
 			block_number: {
 				type: DataTypes.INTEGER,
 				allowNull: false
+			},
+			confirmed: {
+				type: DataTypes.BOOLEAN,
+				defaultValue: false
+			},
+			orphaned: {
+				type: DataTypes.BOOLEAN,
+				defaultValue: false
 			},
 			text: {
 				type: DataTypes.STRING(300),
