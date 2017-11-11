@@ -74,6 +74,7 @@ export default class TwitterService {
 		const params = {
 			q: '#'+hashtag,
 			count: TWITTER_SEARCH_TWEETS_COUNT,
+			tweet_mode: 'extended',
 		};
 		if(!max_id) params.since_id = since_id;
 		else params.max_id = max_id;
@@ -109,6 +110,7 @@ export default class TwitterService {
 		const to_submit = tweet_id_str.splice(0, 100);
 		const params = {
 			id: to_submit.join(','),
+			tweet_mode: 'extended',
 		};
 
 		return new Promise((resolve, reject) => {
