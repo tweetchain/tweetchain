@@ -3,20 +3,21 @@
     "database": "tweetchain",
     "dialect": "sqlite",
     "storage": "tweetchain.db",
-    "operatorsAliases": false
+    "operatorsAliases": false,
+    "logging": false
   },
   "test": {
     "database": "tweetchain",
     "dialect": "sqlite",
     "storage": "tweetchain.db",
-    "operatorsAliases": false
+    "operatorsAliases": false,
+    "logging": false
   },
   "production": {
-    "username": "root",
-    "password": null,
     "database": "tweetchain",
-    "host": "127.0.0.1",
-    "dialect": "mysql",
-    "operatorsAliases": false
+    "dialect": "sqlite",
+    "storage": "tweetchain.db",
+    "operatorsAliases": false,
+    "logging": false
   }
 }

@@ -3,7 +3,7 @@ import TwitterService from './service/twitter';
 import ValidationService from './service/validation';
 
 const twitter = new TwitterService();
-const validator = new ValidationService(db);
+const validator = new ValidationService(db, twitter);
 
 const express = require('express');
 const app = express();
@@ -17,18 +17,7 @@ app.listen(8000, function () {
 });
 
 db.sequelize.sync().then(() => {
-	twitter.connect()
-		.then(() => {
-			return twitter.getHashtagged('twittercoin');
-		}).then((tweets) => {
-			for(const t of tweets.statuses) {
-				if(t.is_quote_status
-						&& (/[0-9]{1,}\//.test(t.text) || /\/[0-9]{1,}/.test(t.text))) {
-					console.log(t.text);
-					// validator.checkTweet(t.id_str);
-				}
-			}
-		}).catch(error => {
-			console.error(error);
-		});
+	twitter.connect().then(() => {
+		return validator.init();
+	});
 });

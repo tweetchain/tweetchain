@@ -1,2 +1,3 @@
 node_modules/
 tweetchain.db
+config/default.json
