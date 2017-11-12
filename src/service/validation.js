@@ -22,7 +22,6 @@ export default class ValidationService {
 		while(await this.storeUntaggedBlocks() || await this.checkOrphanedBlocks());
 		// Now remove non-sequential blocks
 		while(await this.checkNonSequentialBlocks() || await this.checkOrphanedBlocks());
-
 	}
 
 	async storeTaggedBlocksSince(lastblock) {
@@ -183,6 +182,8 @@ export default class ValidationService {
 	}
 
 	async getLatestTweet() {
+		await init();
+
 		return new Promise(async (resolve, reject) => {
 			this.BlockModel.findAll({
 					where: {
