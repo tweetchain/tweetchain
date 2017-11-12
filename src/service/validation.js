@@ -20,6 +20,8 @@ export default class ValidationService {
 		// Only gets tweets with #TwitterCoin
 		await this.storeTaggedBlocksSince(lastblock);
 		while(await this.storeUntaggedBlocks() || await this.checkOrphanedBlocks());
+		// Now remove non-sequential blocks
+		while(await this.checkNonSequentialBlocks() || await this.checkOrphanedBlocks());
 	}
 
 	async storeTaggedBlocksSince(lastblock) {
@@ -116,6 +118,28 @@ export default class ValidationService {
 		return true;
 	}
 
+	async checkNonSequentialBlocks() {
+		const nonsequential = await this.BlockModel.findAll({
+			where: {
+				confirmed: false,
+				orphaned: false,
+				parent: Sequelize.literal('parent.block_number != Block.block_number - 1'),
+			},
+			order: [ ['block_number', 'desc'] ],
+			include: [
+				{ model: this.BlockModel, as: 'parent', },
+			],
+		}).map(async block => {
+			await block.update({
+				orphaned: true,
+			});
+			return block.dataValues.Block_id;
+		});
+
+		// Return unique results
+		return Array.from(new Set(nonsequential)).length;
+	}
+
 	async checkUnconfirmedBlocks(confirmations) {
 		this.BlockModel.findAll({
 			where: {
@@ -155,6 +179,24 @@ export default class ValidationService {
 
 		// Return unique results
 		return Array.from(new Set(missing_blocks));
+	}
+
+	async getLatestTweet() {
+		return new Promise(async (resolve, reject) => {
+			await this.init();
+
+			this.BlockModel.findAll({
+					where: {
+						orphaned: false,
+					},
+					order: [
+						['block_number', 'DESC']
+					],
+					limit: 1,
+				}).then(blocks => {
+					resolve(blocks[0].dataValues);
+				}).catch(error => { reject(error); });
+			});
 	}
 
 	async store(tweet) {
