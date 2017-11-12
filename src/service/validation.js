@@ -182,9 +182,9 @@ export default class ValidationService {
 	}
 
 	async getLatestTweet() {
-		await init();
-
 		return new Promise(async (resolve, reject) => {
+			await this.init();
+
 			this.BlockModel.findAll({
 					where: {
 						orphaned: false,

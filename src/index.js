@@ -13,7 +13,7 @@ db.sequelize.sync().then(() => {
 		return validator.init();
 	});
 }).then(() => {
-	app.get('/', function (req, res) {
+	app.get('/', (req, res) => {
 		const html = `<!DOCTYPE html>
 			<html>
 				<head>
@@ -42,7 +42,7 @@ db.sequelize.sync().then(() => {
 					<div id="latest_tweet"></div>
 					<script type="text/javascript">
 						twttr.ready(function() {
-								jQuery.getJSON('https://tweetchain.info/getlatest', {}, function(data) {
+								jQuery.getJSON('/getlatest', {}, function(data) {
 										twttr.widgets.createTweet(
 											data.id,
 											document.getElementById('latest_tweet'),
@@ -60,7 +60,7 @@ db.sequelize.sync().then(() => {
 		res.send(html);
 	});
 
-	app.get('/getlatest', function (req, res) {
+	app.get('/getlatest', (req, res) => {
 		validator.getLatestTweet().then(tweet => {
 			res.send(JSON.stringify(tweet));
 		});
