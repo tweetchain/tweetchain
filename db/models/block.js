@@ -7,7 +7,7 @@ module.exports = function(sequelize, DataTypes) {
 		},
 		Block_id: {
 			type: DataTypes.STRING(64),
-			allowNull: true
+			allowNull: true,
 		},
 		Twitter_user_id: {
 			type: DataTypes.STRING(64),
@@ -89,9 +89,14 @@ module.exports = function(sequelize, DataTypes) {
 	});
 
 	Block.associate = function(models) {
-		Block.hasMany(Block, { as: 'children', foreignKey: 'Block_id', constraints: false, })
-		Block.belongsTo(Block, { as: 'parent', foreignKey: 'Block_id', constraints: false, })
+	// 	Block.hasMany(Block, { as: 'children', foreignKey: 'Block_id', constraints: false, })
+	// 	Block.belongsTo(Block, { as: 'parent', foreignKey: 'Block_id', constraints: false, })
 	};
+
+	Block.isHierarchy({
+		foreignKey: 'Block_id',
+		as: 'parent',
+	});
 
 	return Block;
 };

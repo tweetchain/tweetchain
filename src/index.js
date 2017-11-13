@@ -7,8 +7,14 @@ const validator = new ValidationService(db, twitter);
 
 const express = require('express');
 const https = require('https');
+const cors = require('cors');
 const fs = require('fs');
+
 const app = express();
+// Only if we aren't running production!!
+if(process.env.NODE_ENV !== 'production') {
+	app.use(cors());
+}
 
 /*
  * Generate SSL certificate
@@ -24,6 +30,8 @@ const ssl_options = {
 db.sequelize.sync().then(() => {
 	twitter.connect().then(() => {
 		return validator.init();
+	}).then(() => {
+		// validator.getLatestBlocks();
 	});
 }).then(() => {
 	app.get('/', (req, res) => {
@@ -33,7 +41,9 @@ db.sequelize.sync().then(() => {
 	});
 
 	app.get('/getlatest', (req, res) => {
-		validator.getLatestTweet().then(tweet => {
+		const count = req.query.count || 1;
+		const start = req.query.start || 0;
+		validator.getLatestBlocks(count, start).then(tweet => {
 			res.send(JSON.stringify(tweet));
 		});
 	});

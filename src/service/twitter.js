@@ -113,22 +113,18 @@ export default class TwitterService {
 			tweet_mode: 'extended',
 		};
 
-		return new Promise((resolve, reject) => {
-			this.client.get('statuses/lookup', params, (error, tweets, response) => {
-				if(error)	return reject(error);
+		let tweets = await this.client.get('statuses/lookup', params);
 
-				// If there are more results, get 'em.
-				if(tweet_id_str.length) {
-					return this.getTweets(tweet_id_str)
-						.then(moar_tweets => {
-							tweets.statuses = tweets.statuses.concat(moar_tweets.statuses);
-							return resolve(tweets);
-						});
-				} else {
-					return resolve(tweets);
-				}
-			});
-		});
+		if(tweets) tweets = tweets.reverse();
+
+		// If there are more results, get 'em.
+		if(tweet_id_str.length) {
+			const moar_tweets = await this.getTweets(tweet_id_str);
+			if(moar_tweets)
+				Array.prototype.unshift.apply(tweets, moar_tweets);
+		}
+
+		return tweets;
 	}
 
 	getLink(tweet) {
