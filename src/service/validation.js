@@ -209,11 +209,21 @@ export default class ValidationService {
 
 		const data = {
 			Block_id: tweet.quoted_status_id_str,
-			Tweeter_id: tweet.user.id_str,
+			Twitter_user_id: tweet.user.id_str,
 			protocol: protocol,
 			block_number: block_number,
 			text: tweet.full_text,
 			orphaned: (!genesis && !Boolean(tweet.quoted_status_id_str)),
+			Twitter_created_at: tweet.created_at,
+			Twitter_retweet_count: tweet.retweet_count,
+			Twitter_favorite_count: tweet.favorite_count,
+			Twitter_user_name: tweet.user.name,
+			Twitter_user_screen_name: tweet.user.screen_name,
+			Twitter_user_description: tweet.user.description,
+			Twitter_user_verified: tweet.user.verified,
+			Twitter_user_followers_count: tweet.user.followers_count,
+			Twitter_user_friends_count: tweet.user.friends_count,
+			Twitter_user_created_at: tweet.user.created_at,
 		};
 
 		if(!await this.BlockModel.findOrCreate({

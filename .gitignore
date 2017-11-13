@@ -1,3 +1,6 @@
 node_modules/
 tweetchain.db
 config/default.json
+/server.csr
+/server.crt
+/server.key
