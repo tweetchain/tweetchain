@@ -6,67 +6,57 @@ const twitter = new TwitterService();
 const validator = new ValidationService(db, twitter);
 
 const express = require('express');
+const https = require('https');
+const cors = require('cors');
+const fs = require('fs');
+
 const app = express();
+// Only if we aren't running production!!
+if(process.env.NODE_ENV !== 'production') {
+	app.use(cors());
+}
+
+/*
+ * Generate SSL certificate
+ * openssl genrsa -out server.key 2048
+ * openssl req -new -key server.key -out server.csr
+ * openssl x509 -req -days 366 -in server.csr -signkey server.key -out server.crt
+ */
+const ssl_options = {
+	key: fs.readFileSync('server.key'),
+	cert: fs.readFileSync('server.crt')
+};
 
 db.sequelize.sync().then(() => {
 	twitter.connect().then(() => {
 		return validator.init();
+	}).then(() => {
+		validator.getLatestBlocks();
 	});
 }).then(() => {
 	app.get('/', (req, res) => {
-		const html = `<!DOCTYPE html>
-			<html>
-				<head>
-					<title>TweetChain.info</title>
-					<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
-					<script>window.twttr = (function(d, s, id) {
-						var js, fjs = d.getElementsByTagName(s)[0],
-							t = window.twttr || {};
-						if (d.getElementById(id)) return t;
-						js = d.createElement(s);
-						js.id = id;
-						js.src = "https://platform.twitter.com/widgets.js";
-						fjs.parentNode.insertBefore(js, fjs);
-
-						t._e = [];
-						t.ready = function(f) {
-							t._e.push(f);
-						};
-
-						return t;
-					}(document, "script", "twitter-wjs"));</script>
-				</head>
-				<body>
-					<h1>Welcome to TweetChain.info</h1>
-					<p>It appears the longest valid chain ends here: </p>
-					<div id="latest_tweet"></div>
-					<script type="text/javascript">
-						twttr.ready(function() {
-								jQuery.getJSON('/getlatest', {}, function(data) {
-										twttr.widgets.createTweet(
-											data.id,
-											document.getElementById('latest_tweet'),
-											{
-												theme: 'light'
-											}
-										);
-									});
-							});
-					</script>
-
-				</body>
-			</html>
-		`;
-		res.send(html);
+		res.send(JSON.stringify({
+			error: 'Invalid endpoint',
+		}));
 	});
 
 	app.get('/getlatest', (req, res) => {
-		validator.getLatestTweet().then(tweet => {
+		const count = req.query.count || 1;
+		const start = req.query.start || 0;
+		validator.getLatestBlocks(count, start).then(tweet => {
 			res.send(JSON.stringify(tweet));
 		});
 	});
 
-	app.listen(8000, function () {
-		console.log('Example app listening on port 8000!');
+	// app.get('/getblocks', (req, res) => {
+	// 	const block_number = req.query.block_number || null;
+	// 	console.log(block_number);
+	// 	// validator.getLatestBlocks(count, start).then(tweet => {
+	// 	// 	res.send(JSON.stringify(tweet));
+	// 	// });
+	// });
+
+	https.createServer(ssl_options, app).listen(8443, function () {
+		console.log('Example app listening on port 8443!');
 	});
 });

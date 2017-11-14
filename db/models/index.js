@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import Sequelize from 'sequelize';
+require('sequelize-hierarchy')(Sequelize);
 
 var basename = path.basename(__filename);
 var env = process.env.NODE_ENV || 'development';
