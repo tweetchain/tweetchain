@@ -180,10 +180,14 @@ export default class ValidationService {
 			limit: 1,
 		});
 
+		if(!last_block) return [];
+
 		return this.getBlocksFrom(last_block.id, count, start);
 	}
 
 	async getBlocksFrom(id, count = 20, start = 0) {
+		if(!id || !id.length) return [];
+
 		await this.sync();
 
 		let last_block = await this.BlockModel.find({
@@ -200,6 +204,8 @@ export default class ValidationService {
 			},
 			limit: 1,
 		});
+
+		if(!last_block) return [];
 
 		const start_orphaned = last_block.orphaned;
 		const flat_blocks = [];
