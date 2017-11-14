@@ -81,6 +81,9 @@ module.exports = function(sequelize, DataTypes) {
 		},
 	},{
 		tableName: 'Block',
+		hierarchy: {
+			foreignKey: 'Block_id',
+		},
 		paranoid: true,
 		timestamps: true,
 		createdAt: 'created_at',
@@ -89,14 +92,9 @@ module.exports = function(sequelize, DataTypes) {
 	});
 
 	Block.associate = function(models) {
-	// 	Block.hasMany(Block, { as: 'children', foreignKey: 'Block_id', constraints: false, })
-	// 	Block.belongsTo(Block, { as: 'parent', foreignKey: 'Block_id', constraints: false, })
+		// Block.hasMany(Block, { as: 'children', foreignKey: 'Block_id', constraints: false, })
+		// Block.belongsTo(Block, { as: 'parent', foreignKey: 'Block_id', constraints: false, })
 	};
-
-	Block.isHierarchy({
-		foreignKey: 'Block_id',
-		as: 'parent',
-	});
 
 	return Block;
 };

@@ -48,11 +48,34 @@ export default class ValidationService {
 			const unique_missing = Array.from(new Set(missing.map((block) => { return block.quoted_status_id_str; })));
 			console.log('Unique missing parents: ' + unique_missing.length);
 
-			const moar_tweets = await this.twitter.getTweets(unique_missing);
+			const moar_tweets = await this.twitter.getTweets(Array.from(unique_missing));
 			console.log('Downloaded parents: ' + moar_tweets.length);
+
+			// If we haven't retrieved the same number of tweets as we had unique_missing than some have been deleted, we should mark those as orphaned
+			if(moar_tweets.length !== unique_missing.length) {
+				const parents_deleted = unique_missing.filter((parent_id) => {
+					return !moar_tweets.some((tweet) => { return tweet.id_str === parent_id; });
+				});
+
+				for(const curparent of parents_deleted) {
+					const phantom = {
+						id_str: curparent,
+						quoted_status_id_str: null,
+						is_quoted_status: true,
+						full_text: '',
+						deleted: true,
+						orphaned: true,
+						user: {},
+					};
+					moar_tweets.push(phantom);
+				}
+
+				console.log('Parent blocks have since been deleted: ', JSON.stringify(parents_deleted));
+			}
 
 			Array.prototype.push.apply(allblocks, moar_tweets);
 			console.log('Total blocks: ' + allblocks.length);
+
 			console.log('===========================');
 
 			// Any more missing parents?
@@ -203,49 +226,30 @@ export default class ValidationService {
 	}
 
 	async getLatestBlocks(count = 1, start = 0) {
-		return new Promise(async (resolve, reject) => {
-			await this.init();
+		await this.init();
 
-			const last_block = await this.BlockModel.find({
-					where: {
-						orphaned: false,
-					},
-					order: [
-						['block_number', 'DESC']
-					],
-					include: [
-						{
-							model: this.BlockModel,
-							as: 'parent',
-							required: false,
-							// all: true,
-							// nested: true,
-							hierarchy: true,
-						},
-					],
-					// offset: start,
-					// limit: count,
-					// limit: 10,
-				}).catch(error => { reject(error); });
-
-			const flat_blocks = [];
-
-			let curblock = last_block;
-			console.log(last_block);
-			// while(curblock) {
-			// 	const block_parent = curblock.parent;
-			// 	delete curblock.parent;
-			// 	flat_blocks.push(curblock);
-
-			// 	if(block_parent)
-			// 		curblock = block_parent;
-
-			// 	console.log(curblock);
-			// }
-
-			// console.log(flat_blocks);
-			resolve(flat_blocks);
+		let last_block = await this.BlockModel.find({
+			where: {
+				orphaned: false,
+				deleted: false,
+			},
+			order: [
+				['block_number', 'DESC'],
+			],
+			include: {
+				model: this.BlockModel,
+				as: 'descendents',
+				hierarchy: true
+			},
+			limit: 1,
 		});
+
+		const flat_blocks = [];
+		do {
+			flat_blocks.push(last_block.dataValues);
+		} while(last_block = await last_block.getParent());
+
+		return flat_blocks;
 	}
 
 	async storeTweets(tweets) {
@@ -274,7 +278,8 @@ export default class ValidationService {
 			protocol: protocol,
 			block_number: block_number,
 			text: tweet.full_text,
-			orphaned: !valid || (!genesis && !Boolean(tweet.quoted_status_id_str)),
+			deleted: tweet.deleted,
+			orphaned: tweet.deleted || !valid || (!genesis && !Boolean(tweet.quoted_status_id_str)),
 			Twitter_created_at: tweet.created_at,
 			Twitter_retweet_count: tweet.retweet_count,
 			Twitter_favorite_count: tweet.favorite_count,
@@ -313,13 +318,15 @@ export default class ValidationService {
 	extract(tweet, protocol = this.getSignaling(this.getText(tweet)), genesis = false) {
 		if(!genesis && (!tweet.is_quote_status || /^RT @[^:]{1,}:/.test(this.getText(tweet)))) {
 			console.log(`Tweet is not a quote - ${this.twitter.getLink(tweet)}`);
-			return;
+			return false;
 		}
+
+		if(tweet.deleted) return false;
 
 		if(protocol) return tweet;
 
 		console.log(`Invalid protocol - ${this.twitter.getLink(tweet)}`);
-		return;
+		return false;
 	}
 
 	getSignaling(status) {

@@ -31,7 +31,7 @@ db.sequelize.sync().then(() => {
 	twitter.connect().then(() => {
 		return validator.init();
 	}).then(() => {
-		// validator.getLatestBlocks();
+		validator.getLatestBlocks();
 	});
 }).then(() => {
 	app.get('/', (req, res) => {
@@ -47,6 +47,14 @@ db.sequelize.sync().then(() => {
 			res.send(JSON.stringify(tweet));
 		});
 	});
+
+	// app.get('/getblocks', (req, res) => {
+	// 	const block_number = req.query.block_number || null;
+	// 	console.log(block_number);
+	// 	// validator.getLatestBlocks(count, start).then(tweet => {
+	// 	// 	res.send(JSON.stringify(tweet));
+	// 	// });
+	// });
 
 	https.createServer(ssl_options, app).listen(8443, function () {
 		console.log('Example app listening on port 8443!');
