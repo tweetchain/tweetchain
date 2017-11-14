@@ -21,9 +21,11 @@ export default class ValidationService {
 
 		// Do we need initial sync?
 		let allblocks = await this.getTaggedTweetsSince(lastblock);
-		allblocks = allblocks.map((tweet) => { return this.toBlock(tweet); }).filter(block => {
-					return !block.orphaned;
-				});
+		allblocks = allblocks.map((tweet) => {
+			return this.toBlock(tweet);
+		}).filter(block => {
+			return !block.orphaned;
+		});
 
 		console.log('Total blocks: ' + allblocks.length);
 		console.log('===========================');
@@ -31,7 +33,7 @@ export default class ValidationService {
 		const _get_w_no_parent = async blocks => {
 			const already_stored = await this.BlockModel.findAll({
 				where: {
-					Block_id: {
+				id: {
 						[Sequelize.Op.in]: blocks.map(block => { return block.Block_id; }),
 					},
 				},
@@ -77,15 +79,13 @@ export default class ValidationService {
 
 				for(const curparent of parents_deleted) {
 					const phantom = {
-						id_str: curparent,
-						quoted_status_id_str: null,
-						is_quoted_status: true,
-						full_text: '',
+						id: curparent,
+						Block_id: null,
+						text: '',
+						protocol: 0,
+						block_number: 0,
 						deleted: true,
 						orphaned: true,
-						user: {
-							id_str: null,
-						},
 					};
 					moar_tweets.push(phantom);
 				}
@@ -99,7 +99,7 @@ export default class ValidationService {
 			console.log('===========================');
 
 			// Any more missing parents?
-			missing = _get_w_no_parent(allblocks);
+			missing = await _get_w_no_parent(allblocks);
 		}
 
 		// Order the missing data so we can insert it properly.
@@ -112,7 +112,7 @@ export default class ValidationService {
 		// // console.log(JSON.stringify(ordered_data.map(block => { return block.id_str; })));
 
 		// Clean up
-		while(await this.checkNonSequentialBlocks() || await this.setOrphans());
+		while(await this.checkNonSequentialBlocks() || await this.setOrphans() || await this.setDeleted());
 	}
 
 	toBlock(tweet) {
@@ -184,6 +184,53 @@ export default class ValidationService {
 		}
 	}
 
+	async setDeleted(count = 100) {
+		let last_block = await this.BlockModel.find({
+			where: {
+				orphaned: false,
+				deleted: false,
+			},
+			order: [
+				['block_number', 'DESC'],
+			],
+			limit: 1,
+		});
+
+		if(!last_block) return false;
+
+		const last100 = await this.getBlocksFrom(last_block.id, count);
+		const moar_tweets = (await this.twitter.getTweets(last100.map(block => {
+				return block.id;
+			}))).map((tweet) => {
+				return this.toBlock(tweet);
+			});
+
+		if(moar_tweets.length !== last100.length) {
+			const deleted = last100.filter((block) => {
+				return !moar_tweets.some((tweet) => { return tweet.id_str === block.id; });
+			});
+
+			const deleted_models = await this.BlockModel.findAll({
+				where: {
+					id: {
+						[Sequelize.Op.in]: deleted.map(block => { return block.id; }),
+					},
+				},
+			});
+
+			for(const del of deleted_models) {
+				await del.update({
+					deleted: true,
+				});
+			}
+
+			console.log(`${deleted.length} blocks deleted`);
+			return true;
+		}
+
+		return false;
+	}
+
 	async checkNonSequentialBlocks() {
 		const nonsequential = await this.BlockModel.findAll({
 			where: {
@@ -220,8 +267,6 @@ export default class ValidationService {
 	}
 
 	async getLatestBlocks(count = 20, start = 0) {
-		await this.sync();
-
 		let last_block = await this.BlockModel.find({
 			where: {
 				orphaned: false,
@@ -240,8 +285,6 @@ export default class ValidationService {
 
 	async getBlocksFrom(id, count = 20, start = 0) {
 		if(!id || !id.length) return [];
-
-		await this.sync();
 
 		let last_block = await this.BlockModel.find({
 			where: {

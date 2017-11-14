@@ -41,8 +41,10 @@ db.sequelize.sync().then(() => {
 	app.get('/getlatest', (req, res) => {
 		const count = req.query.count || 100;
 		const start = req.query.start || 0;
-		validator.getLatestBlocks(count, start).then(tweet => {
-			res.send(JSON.stringify(tweet));
+		validator.sync().then(() => {
+			validator.getLatestBlocks(count, start).then(tweet => {
+				res.send(JSON.stringify(tweet));
+			});
 		});
 	});
 
@@ -50,8 +52,10 @@ db.sequelize.sync().then(() => {
 		const count = req.query.count || 100;
 		const start = req.query.start || 0;
 		const block_id = req.query.id || null;
-		validator.getBlocksFrom(block_id, count, start).then(tweet => {
-			res.send(JSON.stringify(tweet));
+		validator.sync().then(() => {
+			validator.getBlocksFrom(block_id, count, start).then(tweet => {
+				res.send(JSON.stringify(tweet));
+			});
 		});
 	});
 
