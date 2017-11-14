@@ -11,7 +11,7 @@ module.exports = function(sequelize, DataTypes) {
 		},
 		Twitter_user_id: {
 			type: DataTypes.STRING(64),
-			allowNull: false
+			allowNull: true
 		},
 		protocol: {
 			type: DataTypes.INTEGER,

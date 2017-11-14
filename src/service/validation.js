@@ -21,38 +21,50 @@ export default class ValidationService {
 
 		// Do we need initial sync?
 		let allblocks = await this.getTaggedTweetsSince(lastblock);
+		allblocks = allblocks.map((tweet) => { return this.toBlock(tweet); }).filter(block => {
+					return !block.orphaned;
+				});
 
 		console.log('Total blocks: ' + allblocks.length);
 		console.log('===========================');
 
-		function _get_w_no_parent(blocks) {
+		const _get_w_no_parent = async blocks => {
+			const already_stored = await this.BlockModel.findAll({
+				where: {
+					Block_id: {
+						[Sequelize.Op.in]: blocks.map(block => { return block.Block_id; }),
+					},
+				},
+			});
+
 			return blocks.filter((block) => {
+				if(already_stored.some(stored => { stored.dataValues.id === block.Block_id })) return false;
+
 				if(block.deleted) return false;
 
-				if(!block.is_quote_status) return false;
 				// For top level genesis blocks
-				if(!block.quoted_status_id_str) return false;
+				if(!block.Block_id) return false;
 
 				if(blocks.some((parent_block) => {
-					return parent_block.id_str === block.quoted_status_id_str;
+					return parent_block.deleted || (parent_block.id === block.Block_id);
 				})) {
 					return false;
 				} else {
 					return true;
 				}
 			});
-		}
+		};
 
-		let missing = _get_w_no_parent(allblocks);
+		let missing = await _get_w_no_parent(allblocks);
 		while(missing.length) {
 			console.log('Missing parents: ' + missing.length);
 
 			// console.log(missing);
 
-			const unique_missing = Array.from(new Set(missing.map((block) => { return block.quoted_status_id_str; })));
+			const unique_missing = Array.from(new Set(missing.map((block) => { return block.Block_id; })));
 			console.log('Unique missing parents: ' + unique_missing.length);
 
-			const moar_tweets = await this.twitter.getTweets(Array.from(unique_missing));
+			const moar_tweets = (await this.twitter.getTweets(Array.from(unique_missing))).map((tweet) => { return this.toBlock(tweet); });
 			console.log('Downloaded parents: ' + moar_tweets.length);
 
 			// console.log(moar_tweets);
@@ -60,7 +72,7 @@ export default class ValidationService {
 			// If we haven't retrieved the same number of tweets as we had unique_missing than some have been deleted, we should mark those as orphaned
 			if(moar_tweets.length !== unique_missing.length) {
 				const parents_deleted = unique_missing.filter((parent_id) => {
-					return !moar_tweets.some((tweet) => { return tweet.id_str === parent_id; });
+					return !moar_tweets.some((tweet) => { return tweet.id === parent_id; });
 				});
 
 				for(const curparent of parents_deleted) {
@@ -92,22 +104,51 @@ export default class ValidationService {
 
 		// Order the missing data so we can insert it properly.
 		const ordered_blocks = allblocks.sort((first, second) => {
-			return (new BigNumber(first.id_str).lt(second.id_str) ? -1 : 1);
+			return (new BigNumber(first.id).lt(second.id) ? -1 : 1);
 		});
 
-		await this.storeTweets(ordered_blocks);
+		await this.storeBlocks(ordered_blocks);
 
-		// console.log(JSON.stringify(ordered_data.map(block => { return block.id_str; })));
+		// // console.log(JSON.stringify(ordered_data.map(block => { return block.id_str; })));
 
 		// Clean up
 		while(await this.checkNonSequentialBlocks() || await this.setOrphans());
+	}
+
+	toBlock(tweet) {
+		const text = this.getText(tweet);
+		const block_number = this.getBlockNumber(text);
+		const protocol = this.getSignaling(text);
+		const genesis = (block_number === '0');
+		const valid = this.extract(tweet, protocol, genesis);
+
+		return {
+			id: tweet.id_str,
+			Block_id: tweet.quoted_status_id_str,
+			Twitter_user_id: tweet.user.id_str,
+			protocol: protocol,
+			block_number: block_number,
+			text: tweet.full_text,
+			orphaned: tweet.deleted || !valid || (!genesis && !Boolean(tweet.quoted_status_id_str)),
+			deleted: tweet.deleted,
+			Twitter_created_at: tweet.created_at,
+			Twitter_retweet_count: tweet.retweet_count,
+			Twitter_favorite_count: tweet.favorite_count,
+			Twitter_user_name: tweet.user.name,
+			Twitter_user_screen_name: tweet.user.screen_name,
+			Twitter_user_description: tweet.user.description,
+			Twitter_user_verified: tweet.user.verified,
+			Twitter_user_followers_count: tweet.user.followers_count,
+			Twitter_user_friends_count: tweet.user.friends_count,
+			Twitter_user_created_at: tweet.user.created_at,
+		};
 	}
 
 	async getTaggedTweetsSince(lastblock) {
 		return await this.twitter.getHashtagged('twittercoin', lastblock)
 			.then(async (tweets) => {
 				console.log(`Got ${tweets.statuses.length} tweets for processing`);
-				return tweets.statuses;
+				return tweets.statuses.filter(tweet => { return tweet.is_quote_status; });
 			}).catch(error => {
 				console.error(error);
 			});
@@ -166,6 +207,18 @@ export default class ValidationService {
 		return Array.from(new Set(nonsequential)).length;
 	}
 
+	async getValidBlocks() {
+		return await this.BlockModel.findAll({
+			where: {
+				orphaned: false,
+				deleted: false,
+			},
+			order: [
+				['block_number', 'ASC'],
+			],
+		});
+	}
+
 	async getLatestBlocks(count = 20, start = 0) {
 		await this.sync();
 
@@ -220,64 +273,28 @@ export default class ValidationService {
 		return flat_blocks;
 	}
 
-	async storeTweets(tweets) {
-		console.log(`Got ${tweets.length} tweets for processing`);
+	async storeBlocks(blocks) {
+		console.log(`Got ${blocks.length} blocks for processing`);
 
 		let invalid = 0;
-		for(const t of tweets) {
+		for(const t of blocks) {
 			if(!await this.store(t))
 				++invalid;
 		}
 
-		console.log(`${invalid} tweets invalid`);
+		console.log(`${invalid} blocks invalid`);
 	}
 
-	async store(tweet) {
-		const text = this.getText(tweet);
-		const block_number = this.getBlockNumber(text);
-		const protocol = this.getSignaling(text);
-		const genesis = (block_number === '0');
-
-		const valid = this.extract(tweet, protocol, genesis);
-
-		const data = {
-			Block_id: tweet.quoted_status_id_str,
-			Twitter_user_id: tweet.user.id_str,
-			protocol: protocol,
-			block_number: block_number,
-			text: tweet.full_text,
-			orphaned: tweet.deleted || !valid || (!genesis && !Boolean(tweet.quoted_status_id_str)),
-			deleted: tweet.deleted,
-			Twitter_created_at: tweet.created_at,
-			Twitter_retweet_count: tweet.retweet_count,
-			Twitter_favorite_count: tweet.favorite_count,
-			Twitter_user_name: tweet.user.name,
-			Twitter_user_screen_name: tweet.user.screen_name,
-			Twitter_user_description: tweet.user.description,
-			Twitter_user_verified: tweet.user.verified,
-			Twitter_user_followers_count: tweet.user.followers_count,
-			Twitter_user_friends_count: tweet.user.friends_count,
-			Twitter_user_created_at: tweet.user.created_at,
-		};
-
+	async store(block) {
 		if(!await this.BlockModel.findOrCreate({
 			where: {
-				id: tweet.id_str,
+				id: block.id,
 			},
-			defaults: data,
+			defaults: block,
 		}).spread((record, created) => {
-			console.log(`Record ${record.id} created == ${created}, ${this.twitter.getLink(tweet)}`);
-		}).then(async () => {
-			// // If this is a quoted tweet and said tweet is included, add it too
-			// if(tweet.quoted_status_id_str
-			// 		&& tweet.quoted_status
-			// 		&& !await this.store(tweet.quoted_status)) {
-			// 	return false; // return so that this counts as invalid
-			// }
-
-			return true;
+			console.log(`Record ${record.id} created == ${created}`);
 		}).catch(error => {
-			console.error('Error: ', error, tweet);
+			console.error('Error: ', error, block);
 		})) return false;
 
 		return valid;
@@ -288,6 +305,7 @@ export default class ValidationService {
 
 		if(!genesis && (!tweet.is_quote_status || /^RT @[^:]{1,}:/.test(this.getText(tweet)))) {
 			console.log(`Tweet is not a quote - ${this.twitter.getLink(tweet)}`);
+			// console.log(tweet);
 			return false;
 		}
 

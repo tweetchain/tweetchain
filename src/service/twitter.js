@@ -75,9 +75,9 @@ export default class TwitterService {
 			q: '#'+hashtag,
 			count: TWITTER_SEARCH_TWEETS_COUNT,
 			tweet_mode: 'extended',
+			since_id: since_id,
 		};
-		if(!max_id) params.since_id = since_id;
-		else params.max_id = max_id;
+		if(max_id) params.max_id = max_id;
 
 		return new Promise((resolve, reject) => {
 			this.client.get('search/tweets', params, (error, tweets, response) => {
@@ -92,8 +92,7 @@ export default class TwitterService {
 				const min_id_str = BigNumber.min(tweets.statuses.map((tweet) => { return new BigNumber(tweet.id_str); }));
 
 				// If there are more results, get 'em.
-				if(tweets.statuses.length === TWITTER_SEARCH_TWEETS_COUNT
-						&& min_id_str.toString() !== max_id) {
+				if(min_id_str.toString() !== max_id) {
 					return this.getHashtagged(hashtag, since_id, min_id_str.toString())
 						.then(moar_tweets => {
 							tweets.statuses = tweets.statuses.concat(moar_tweets.statuses);
