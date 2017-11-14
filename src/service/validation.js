@@ -15,12 +15,12 @@ export default class ValidationService {
 		this.twitter = twitter;
 	}
 
-	async init() {
+	async sync() {
 		const lastblock = (await this.BlockModel.max('id') || GENESIS_TWEET)
 		console.log(`Last tweet is ${lastblock}`);
 
 		// Do we need initial sync?
-		let allblocks = await this.getTaggedBlocksSince(lastblock);
+		let allblocks = await this.getTaggedTweetsSince(lastblock);
 
 		console.log('Total blocks: ' + allblocks.length);
 		console.log('===========================');
@@ -103,7 +103,7 @@ export default class ValidationService {
 		while(await this.checkNonSequentialBlocks() || await this.setOrphans());
 	}
 
-	async getTaggedBlocksSince(lastblock) {
+	async getTaggedTweetsSince(lastblock) {
 		return await this.twitter.getHashtagged('twittercoin', lastblock)
 			.then(async (tweets) => {
 				console.log(`Got ${tweets.statuses.length} tweets for processing`);
@@ -166,13 +166,29 @@ export default class ValidationService {
 		return Array.from(new Set(nonsequential)).length;
 	}
 
-	async getLatestBlocks(count = 1, start = 0) {
-		await this.init();
+	async getLatestBlocks(count = 20, start = 0) {
+		await this.sync();
 
 		let last_block = await this.BlockModel.find({
 			where: {
 				orphaned: false,
 				deleted: false,
+			},
+			order: [
+				['block_number', 'DESC'],
+			],
+			limit: 1,
+		});
+
+		return this.getBlocksFrom(last_block.id, count, start);
+	}
+
+	async getBlocksFrom(id, count = 20, start = 0) {
+		await this.sync();
+
+		let last_block = await this.BlockModel.find({
+			where: {
+				id: id,
 			},
 			order: [
 				['block_number', 'DESC'],
@@ -185,10 +201,15 @@ export default class ValidationService {
 			limit: 1,
 		});
 
+		const start_orphaned = last_block.orphaned;
 		const flat_blocks = [];
-		do {
-			flat_blocks.push(last_block.dataValues);
-		} while(last_block = await last_block.getParent());
+		let counter = 0;
+		do
+			if(counter++ >= start)
+				flat_blocks.push(last_block.dataValues);
+		while((flat_blocks.length < count)
+			&& ( last_block = await last_block.getParent() )
+			&& ( last_block.orphaned === start_orphaned ));
 
 		return flat_blocks;
 	}
