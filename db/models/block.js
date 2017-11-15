@@ -11,19 +11,19 @@ module.exports = function(sequelize, DataTypes) {
 		},
 		Twitter_user_id: {
 			type: DataTypes.STRING(64),
-			allowNull: true
+			allowNull: true,
 		},
 		protocol: {
 			type: DataTypes.INTEGER,
-			allowNull: false
+			allowNull: false,
 		},
 		block_number: {
 			type: DataTypes.INTEGER,
-			allowNull: false
+			allowNull: false,
 		},
 		confirmed: {
 			type: DataTypes.BOOLEAN,
-			defaultValue: false
+			defaultValue: false,
 		},
 		orphaned: {
 			type: DataTypes.BOOLEAN,

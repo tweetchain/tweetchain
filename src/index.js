@@ -29,7 +29,8 @@ const ssl_options = {
 
 db.sequelize.sync().then(() => {
 	twitter.connect().then(() => {
-		return validator.sync();
+		// return validator.sync();
+		return true;
 	});
 }).then(() => {
 	app.get('/', (req, res) => {

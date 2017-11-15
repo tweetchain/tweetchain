@@ -83,6 +83,7 @@ export default class TwitterService {
 			this.client.get('search/tweets', params, (error, tweets, response) => {
 				if(error)	return reject(error);
 
+				// console.log(tweets);
 				// Nothing to store
 				if(!tweets.statuses || !tweets.statuses.length) {
 					return resolve(tweets);

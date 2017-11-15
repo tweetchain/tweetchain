@@ -17,15 +17,21 @@ export default class ValidationService {
 	}
 
 	async sync() {
-		const lastblock = (await this.BlockModel.max('id') || GENESIS_TWEET)
-		console.log(`Last tweet is ${lastblock}`);
+		let lastblock = await this.BlockModel.find({
+			order: [
+				['Twitter_created_at', 'DESC'],
+			],
+		}) || { dataValues: { id: GENESIS_TWEET, } };
+
+		// if(!lastblock)
+		// 	lastblock = ;
+
+		console.log(`Last tweet is ${lastblock.dataValues.id}`);
 
 		// Do we need initial sync?
-		let allblocks = await this.getTaggedTweetsSince(lastblock);
+		let allblocks = await this.getTaggedTweetsSince(lastblock.dataValues.id);
 		allblocks = allblocks.map((tweet) => {
 			return this.toBlock(tweet);
-		}).filter(block => {
-			return !block.orphaned;
 		});
 
 		console.log('Total valid blocks: ' + allblocks.length);
@@ -35,7 +41,7 @@ export default class ValidationService {
 			const already_stored = await this.BlockModel.findAll({
 				where: {
 				id: {
-						[Sequelize.Op.in]: blocks.map(block => { return block.Block_id; }),
+						[Sequelize.Op.in]: blocks.filter(block => { return block.Block_id; }).map(block => { return block.Block_id; }),
 					},
 				},
 			});
@@ -45,6 +51,7 @@ export default class ValidationService {
 					// console.log(`Block not missing due to deleted`);
 					return false;
 				}
+
 				// For top level genesis blocks
 				if(!block.Block_id) {
 					// console.log(`Block not missing due to no block id`);
@@ -107,7 +114,6 @@ export default class ValidationService {
 
 			Array.prototype.push.apply(allblocks, moar_tweets);
 			console.log('Total blocks: ' + allblocks.length);
-
 			console.log('===========================');
 
 			// Any more missing parents?
@@ -115,16 +121,20 @@ export default class ValidationService {
 		}
 
 		// Order the missing data so we can insert it properly.
-		const ordered_blocks = allblocks.sort((first, second) => {
-			return (new BigNumber(first.id).lt(second.id) ? -1 : 1);
+		allblocks.sort((first, second) => {
+			return new BigNumber(first.id).sub(new BigNumber(second.id));
 		});
 
-		await this.storeBlocks(ordered_blocks);
+		// console.log(allblocks);
+		console.log(allblocks[allblocks.length-1]);
+
+		await this.storeBlocks(allblocks);
 
 		// // console.log(JSON.stringify(ordered_data.map(block => { return block.id_str; })));
 
 		// Clean up
-		while(await this.checkNonSequentialBlocks() || await this.checkNonConformingProtocol() || await this.setOrphans() || await this.setDeleted());
+		while(await this.checkNonSequentialBlocks() || await this.checkNonConformingProtocol() || await this.setOrphans(PROTOCOL_LEGACY) || await this.setDeleted(PROTOCOL_LEGACY));
+		while(await this.checkNonSequentialBlocks() || await this.checkNonConformingProtocol() || await this.setOrphans(PROTOCOL_STRICT100) || await this.setDeleted(PROTOCOL_STRICT100));
 	}
 
 	toBlock(tweet) {
@@ -166,9 +176,10 @@ export default class ValidationService {
 			});
 	}
 
-	async setOrphans() {
+	async setOrphans(protocol) {
 		let orphans = await this.BlockModel.findAll({
 			where: {
+				// protocol: this.getProtocolSelector(protocol),
 				[Sequelize.Op.or]: [
 					{ orphaned: true, },
 					{ deleted: true, },
@@ -196,9 +207,10 @@ export default class ValidationService {
 		}
 	}
 
-	async setDeleted(count = 100) {
+	async setDeleted(protocol, count = 100) {
 		let last_block = await this.BlockModel.find({
 			where: {
+				// protocol: this.getProtocolSelector(protocol),
 				orphaned: false,
 				deleted: false,
 			},
@@ -246,7 +258,7 @@ export default class ValidationService {
 		return false;
 	}
 
-	async checkNonSequentialBlocks() {
+	async checkNonSequentialBlocks(protocol) {
 		const nonsequential = await this.BlockModel.findAll({
 			where: {
 				confirmed: false,
@@ -270,12 +282,13 @@ export default class ValidationService {
 	}
 
 	async checkNonConformingProtocol() {
-		await this.BlockModel.findAll({
+		const blocks = await this.BlockModel.findAll({
 			where: {
 				confirmed: false,
 				orphaned: false,
 				deleted: false,
-				parent: Sequelize.literal('Block.block_number > 100 AND parent.protocol != Block.protocol'),
+				block_number: { [Sequelize.Op.gt]: 100 },
+				parent: Sequelize.literal('parent.protocol != Block.protocol'),
 			},
 			order: [ ['block_number', 'desc'] ],
 			include: [
@@ -283,22 +296,15 @@ export default class ValidationService {
 			],
 		}).map(async block => {
 			await block.update({
-				protocol: PROTOCOL_LEGACY,
+				protocol: block.parent.protocol,
 			});
+
 			return block.dataValues.Block_id;
 		});
-	}
 
-	async getValidBlocks() {
-		return await this.BlockModel.findAll({
-			where: {
-				orphaned: false,
-				deleted: false,
-			},
-			order: [
-				['block_number', 'ASC'],
-			],
-		});
+		if(blocks.length === 1) console.log(blocks);
+		console.log(`${blocks.length} Invalid protocols`);
+		return blocks.length;
 	}
 
 	async getLatestBlocks(protocol, count = 20, start = 0) {
@@ -358,26 +364,24 @@ export default class ValidationService {
 
 		let invalid = 0;
 		for(const t of blocks) {
-			if(!await this.store(t))
+			if(!await this.store(t)) {
+				console.log(`Block ${t.id} invalid`);
 				++invalid;
+			}
 		}
 
 		console.log(`${invalid} blocks invalid`);
 	}
 
 	async store(block) {
-		if(!await this.BlockModel.findOrCreate({
+		const data = await this.BlockModel.findOrCreate({
 			where: {
 				id: block.id,
 			},
 			defaults: block,
-		}).spread((record, created) => {
-			console.log(`Record ${record.id} created == ${created}`);
-		}).catch(error => {
-			console.error('Error: ', error, block);
-		})) return false;
+		}).catch((error) => { return false; });
 
-		return valid;
+		return data;
 	}
 
 	extract(tweet, protocol = this.getProtocol(this.getText(tweet)), genesis = false) {
@@ -403,6 +407,8 @@ export default class ValidationService {
 		if(/^[0-9]{1,}\/ #TwitterCoin @otsproofbot/i.test(status)) return PROTOCOL_STRICT100;
 		if(/[0-9]{1,}\//.test(status)) return PROTOCOL_LEGACY;
 		if(/\/[0-9]{1,}/.test(status)) return PROTOCOL_FUZZY;
+
+		return 0;
 	}
 
 	getProtocolSelector(protocol) {
@@ -424,7 +430,7 @@ export default class ValidationService {
 		if(protocol === PROTOCOL_STRICT100)
 			return /^([0-9]{1,})\//.exec(status)[1];
 
-		return false;
+		return null;
 	}
 
 	// Remove the link to the quoted text so it doesn't get matched as a block

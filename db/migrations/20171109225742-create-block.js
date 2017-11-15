@@ -12,7 +12,7 @@ module.exports = {
 			},
 			Twitter_user_id: {
 				type: DataTypes.STRING(64),
-				allowNull: false
+				allowNull: true,
 			},
 			protocol: {
 				type: DataTypes.INTEGER,
@@ -20,7 +20,7 @@ module.exports = {
 			},
 			block_number: {
 				type: DataTypes.INTEGER,
-				allowNull: false
+				allowNull: false,
 			},
 			confirmed: {
 				type: DataTypes.BOOLEAN,
