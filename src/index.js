@@ -42,10 +42,8 @@ db.sequelize.sync().then(() => {
 		const protocol = req.query.protocol || 'legacy';
 		const count = req.query.count || 100;
 		const start = req.query.start || 0;
-		validator.sync().then(() => {
-			validator.getLatestBlocks(protocol, count, start).then(tweet => {
-				res.send(JSON.stringify(tweet));
-			});
+		validator.getLatestBlocks(protocol, count, start).then(tweet => {
+			res.send(JSON.stringify(tweet));
 		});
 	});
 
@@ -53,10 +51,8 @@ db.sequelize.sync().then(() => {
 		const count = req.query.count || 100;
 		const start = req.query.start || 0;
 		const block_id = req.query.id || null;
-		validator.sync().then(() => {
-			validator.getBlocksFrom(block_id, count, start).then(tweet => {
-				res.send(JSON.stringify(tweet));
-			});
+		validator.getBlocksFrom(block_id, count, start).then(tweet => {
+			res.send(JSON.stringify(tweet));
 		});
 	});
 
