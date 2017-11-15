@@ -126,7 +126,7 @@ export default class ValidationService {
 		});
 
 		// console.log(allblocks);
-		console.log(allblocks[allblocks.length-1]);
+		// console.log(allblocks[allblocks.length-1]);
 
 		await this.storeBlocks(allblocks);
 
