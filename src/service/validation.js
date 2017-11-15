@@ -400,7 +400,7 @@ export default class ValidationService {
 	}
 
 	getProtocol(status) {
-		if(/^[0-9]{1,}\/ #TwitterCoin @otsproofbot\n\n/i.test(status)) return PROTOCOL_STRICT100;
+		if(/^[0-9]{1,}\/ #TwitterCoin @otsproofbot/i.test(status)) return PROTOCOL_STRICT100;
 		if(/[0-9]{1,}\//.test(status)) return PROTOCOL_LEGACY;
 		if(/\/[0-9]{1,}/.test(status)) return PROTOCOL_FUZZY;
 	}
