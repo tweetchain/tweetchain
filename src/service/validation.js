@@ -27,7 +27,7 @@ export default class ValidationService {
 			return !block.orphaned;
 		});
 
-		console.log('Total blocks: ' + allblocks.length);
+		console.log('Total valid blocks: ' + allblocks.length);
 		console.log('===========================');
 
 		const _get_w_no_parent = async blocks => {
@@ -40,20 +40,30 @@ export default class ValidationService {
 			});
 
 			return blocks.filter((block) => {
-				if(already_stored.some(stored => { stored.dataValues.id === block.Block_id })) return false;
-
-				if(block.deleted) return false;
-
+				if(block.deleted) {
+					// console.log(`Block not missing due to deleted`);
+					return false;
+				}
 				// For top level genesis blocks
-				if(!block.Block_id) return false;
+				if(!block.Block_id) {
+					// console.log(`Block not missing due to no block id`);
+					return false;
+				}
 
 				if(blocks.some((parent_block) => {
 					return parent_block.deleted || (parent_block.id === block.Block_id);
 				})) {
+					// console.log(`Block not missing due to found in self`);
 					return false;
-				} else {
-					return true;
 				}
+
+				// console.log(already_stored);
+				if(already_stored.some(stored => { return stored.dataValues.id === block.Block_id })) {
+					// console.log(`Block not missing due to not found in database`);
+					return false;
+				}
+
+				return true;
 			});
 		};
 
@@ -65,6 +75,7 @@ export default class ValidationService {
 
 			const unique_missing = Array.from(new Set(missing.map((block) => { return block.Block_id; })));
 			console.log('Unique missing parents: ' + unique_missing.length);
+			console.log(unique_missing);
 
 			const moar_tweets = (await this.twitter.getTweets(Array.from(unique_missing))).map((tweet) => { return this.toBlock(tweet); });
 			console.log('Downloaded parents: ' + moar_tweets.length);
@@ -198,22 +209,25 @@ export default class ValidationService {
 
 		if(!last_block) return false;
 
-		const last100 = await this.getBlocksFrom(last_block.id, count);
-		const moar_tweets = (await this.twitter.getTweets(last100.map(block => {
-				return block.id;
-			}))).map((tweet) => {
-				return this.toBlock(tweet);
-			});
+		const last100 = (await this.getBlocksFrom(last_block.id, count)).map(block => {
+			return block.id;
+		});
 
-		if(moar_tweets.length !== last100.length) {
+		const moar_tweets = (await this.twitter.getTweets(last100)).map((tweet) => {
+			return this.toBlock(tweet);
+		}).filter(block => {
+			return block.orphaned;
+		});
+
+		if(moar_tweets.length) {
 			const deleted = last100.filter((block) => {
-				return !moar_tweets.some((tweet) => { return tweet.id_str === block.id; });
+				return !moar_tweets.some((tweet) => { return tweet.id === block; });
 			});
 
 			const deleted_models = await this.BlockModel.findAll({
 				where: {
 					id: {
-						[Sequelize.Op.in]: deleted.map(block => { return block.id; }),
+						[Sequelize.Op.in]: deleted,
 					},
 				},
 			});
@@ -344,18 +358,22 @@ export default class ValidationService {
 	}
 
 	extract(tweet, protocol = this.getSignaling(this.getText(tweet)), genesis = false) {
+		// console.log(tweet.deleted, protocol, genesis, tweet.is_quote_status, this.getText(tweet))
+
 		if(tweet.deleted) return false;
 
 		if(!genesis && (!tweet.is_quote_status || /^RT @[^:]{1,}:/.test(this.getText(tweet)))) {
 			console.log(`Tweet is not a quote - ${this.twitter.getLink(tweet)}`);
-			// console.log(tweet);
 			return false;
 		}
 
-		if(protocol) return tweet;
+		if(!protocol) {
+			console.log(`Invalid protocol - ${this.twitter.getLink(tweet)}`);
+			return false;
+		}
 
-		console.log(`Invalid protocol - ${this.twitter.getLink(tweet)}`);
-		return false;
+		console.log(`Tweet appears formatted correctly - ${this.twitter.getLink(tweet)}`);
+		return tweet;
 	}
 
 	getSignaling(status) {
