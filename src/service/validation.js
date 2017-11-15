@@ -372,7 +372,7 @@ export default class ValidationService {
 			return false;
 		}
 
-		console.log(`Tweet appears formatted correctly - ${this.twitter.getLink(tweet)}`);
+		// console.log(`Tweet appears formatted correctly - ${this.twitter.getLink(tweet)}`);
 		return tweet;
 	}
 
