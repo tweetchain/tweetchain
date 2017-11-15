@@ -39,10 +39,11 @@ db.sequelize.sync().then(() => {
 	});
 
 	app.get('/getlatest', (req, res) => {
+		const protocol = req.query.protocol || 'legacy';
 		const count = req.query.count || 100;
 		const start = req.query.start || 0;
 		validator.sync().then(() => {
-			validator.getLatestBlocks(count, start).then(tweet => {
+			validator.getLatestBlocks(protocol, count, start).then(tweet => {
 				res.send(JSON.stringify(tweet));
 			});
 		});

@@ -8,6 +8,7 @@ const CONFIRMATION_COUNT = 10;
 
 const PROTOCOL_LEGACY = 1;
 const PROTOCOL_FUZZY = 2;
+const PROTOCOL_STRICT100 = 3;
 
 export default class ValidationService {
 	constructor(db, twitter) {
@@ -123,13 +124,13 @@ export default class ValidationService {
 		// // console.log(JSON.stringify(ordered_data.map(block => { return block.id_str; })));
 
 		// Clean up
-		while(await this.checkNonSequentialBlocks() || await this.setOrphans() || await this.setDeleted());
+		while(await this.checkNonSequentialBlocks() || await this.checkNonConformingProtocol() || await this.setOrphans() || await this.setDeleted());
 	}
 
 	toBlock(tweet) {
 		const text = this.getText(tweet);
 		const block_number = this.getBlockNumber(text);
-		const protocol = this.getSignaling(text);
+		const protocol = this.getProtocol(text);
 		const genesis = (block_number === '0');
 		const valid = this.extract(tweet, protocol, genesis);
 
@@ -268,6 +269,26 @@ export default class ValidationService {
 		return Array.from(new Set(nonsequential)).length;
 	}
 
+	async checkNonConformingProtocol() {
+		await this.BlockModel.findAll({
+			where: {
+				confirmed: false,
+				orphaned: false,
+				deleted: false,
+				parent: Sequelize.literal('Block.block_number > 100 AND parent.protocol != Block.protocol'),
+			},
+			order: [ ['block_number', 'desc'] ],
+			include: [
+				{ model: this.BlockModel, as: 'parent', },
+			],
+		}).map(async block => {
+			await block.update({
+				protocol: PROTOCOL_LEGACY,
+			});
+			return block.dataValues.Block_id;
+		});
+	}
+
 	async getValidBlocks() {
 		return await this.BlockModel.findAll({
 			where: {
@@ -280,16 +301,19 @@ export default class ValidationService {
 		});
 	}
 
-	async getLatestBlocks(count = 20, start = 0) {
+	async getLatestBlocks(protocol, count = 20, start = 0) {
+		if(protocol === 'strict100') protocol = PROTOCOL_STRICT100;
+		else protocol = PROTOCOL_LEGACY;
+
 		let last_block = await this.BlockModel.find({
 			where: {
 				orphaned: false,
 				deleted: false,
+				protocol: this.getProtocolSelector(protocol),
 			},
 			order: [
 				['block_number', 'DESC'],
 			],
-			limit: 1,
 		});
 
 		if(!last_block) return [];
@@ -310,9 +334,8 @@ export default class ValidationService {
 			include: {
 				model: this.BlockModel,
 				as: 'descendents',
-				hierarchy: true
+				hierarchy: true,
 			},
-			limit: 1,
 		});
 
 		if(!last_block) return [];
@@ -357,7 +380,7 @@ export default class ValidationService {
 		return valid;
 	}
 
-	extract(tweet, protocol = this.getSignaling(this.getText(tweet)), genesis = false) {
+	extract(tweet, protocol = this.getProtocol(this.getText(tweet)), genesis = false) {
 		// console.log(tweet.deleted, protocol, genesis, tweet.is_quote_status, this.getText(tweet))
 
 		if(tweet.deleted) return false;
@@ -376,21 +399,30 @@ export default class ValidationService {
 		return tweet;
 	}
 
-	getSignaling(status) {
-		let protocol = 0;
-
-		if(/[0-9]{1,}\//.test(status)) protocol |= PROTOCOL_LEGACY;
-		if(/\/[0-9]{1,}/.test(status)) protocol |= PROTOCOL_FUZZY;
-
-		return protocol;
+	getProtocol(status) {
+		if(/^[0-9]{1,}\/ #TwitterCoin @otsproofbot\n\n/i.test(status)) return PROTOCOL_STRICT100;
+		if(/[0-9]{1,}\//.test(status)) return PROTOCOL_LEGACY;
+		if(/\/[0-9]{1,}/.test(status)) return PROTOCOL_FUZZY;
 	}
 
-	getBlockNumber(status, signal = this.getSignaling(status)) {
-		if(signal & PROTOCOL_LEGACY)
+	getProtocolSelector(protocol) {
+		if(protocol === PROTOCOL_STRICT100) {
+			return PROTOCOL_STRICT100;
+		}
+
+		return { [Sequelize.Op.gt]: 0 };
+	}
+
+	getBlockNumber(status, protocol = this.getProtocol(status)) {
+		// console.log(protocol, status);
+		if(protocol === PROTOCOL_LEGACY)
 			return /([0-9]{1,})\//.exec(status)[1];
 
-		if(signal & PROTOCOL_FUZZY)
+		if(protocol === PROTOCOL_FUZZY)
 			return /\/([0-9]{1,})/.exec(status)[1];
+
+		if(protocol === PROTOCOL_STRICT100)
+			return /^([0-9]{1,})\//.exec(status)[1];
 
 		return false;
 	}
