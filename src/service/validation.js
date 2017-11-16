@@ -7,8 +7,7 @@ const GENESIS_TWEET = '928712955847262208';
 const CONFIRMATION_COUNT = 10;
 
 const PROTOCOL_LEGACY = 1;
-const PROTOCOL_FUZZY = 2;
-const PROTOCOL_STRICT100 = 3;
+const PROTOCOL_STRICT100 = 2;
 
 export default class ValidationService {
 	constructor(db, twitter) {
@@ -19,7 +18,7 @@ export default class ValidationService {
 	async sync() {
 		let lastblock = await this.BlockModel.find({
 			order: [
-				['Twitter_created_at', 'DESC'],
+				['id', 'DESC'],
 			],
 		}) || { dataValues: { id: GENESIS_TWEET, } };
 
@@ -29,8 +28,8 @@ export default class ValidationService {
 		console.log(`Last tweet is ${lastblock.dataValues.id}`);
 
 		// Do we need initial sync?
-		let allblocks = await this.getTaggedTweetsSince(lastblock.dataValues.id);
-		allblocks = allblocks.map((tweet) => {
+		let alltweets = await this.getTaggedTweetsSince(lastblock.dataValues.id);
+		let allblocks = alltweets.map((tweet) => {
 			return this.toBlock(tweet);
 		});
 
@@ -40,7 +39,7 @@ export default class ValidationService {
 		const _get_w_no_parent = async blocks => {
 			const already_stored = await this.BlockModel.findAll({
 				where: {
-				id: {
+					id: {
 						[Sequelize.Op.in]: blocks.filter(block => { return block.Block_id; }).map(block => { return block.Block_id; }),
 					},
 				},
@@ -79,21 +78,23 @@ export default class ValidationService {
 		while(missing.length) {
 			console.log('Missing parents: ' + missing.length);
 
-			// console.log(missing);
-
 			const unique_missing = Array.from(new Set(missing.map((block) => { return block.Block_id; })));
 			console.log('Unique missing parents: ' + unique_missing.length);
 			console.log(unique_missing);
 
-			const moar_tweets = (await this.twitter.getTweets(Array.from(unique_missing))).map((tweet) => { return this.toBlock(tweet); });
-			console.log('Downloaded parents: ' + moar_tweets.length);
+			const moar_tweets = await this.twitter.getTweets(Array.from(unique_missing));
+			const moar_tweet_blocks = moar_tweets.map((tweet) => {
+				return this.toBlock(tweet);
+			});
+			console.log('Downloaded parents: ' + moar_tweet_blocks.length);
 
-			// console.log(moar_tweets);
+			// console.log(missing);
+			// console.log(moar_tweet_blocks);
 
 			// If we haven't retrieved the same number of tweets as we had unique_missing than some have been deleted, we should mark those as orphaned
-			if(moar_tweets.length !== unique_missing.length) {
+			if(moar_tweet_blocks.length !== unique_missing.length) {
 				const parents_deleted = unique_missing.filter((parent_id) => {
-					return !moar_tweets.some((tweet) => { return tweet.id === parent_id; });
+					return !moar_tweet_blocks.some((tweet) => { return tweet.id === parent_id; });
 				});
 
 				for(const curparent of parents_deleted) {
@@ -104,15 +105,17 @@ export default class ValidationService {
 						protocol: 0,
 						block_number: 0,
 						deleted: true,
-						orphaned: true,
+						orphaned: false,
 					};
-					moar_tweets.push(phantom);
+					moar_tweet_blocks.push(phantom);
 				}
 
 				console.log('Parent blocks have since been deleted: ', JSON.stringify(parents_deleted));
 			}
 
-			Array.prototype.push.apply(allblocks, moar_tweets);
+			Array.prototype.push.apply(alltweets, moar_tweets);
+			Array.prototype.push.apply(allblocks, moar_tweet_blocks);
+			console.log('Total tweets: ' + alltweets.length);
 			console.log('Total blocks: ' + allblocks.length);
 			console.log('===========================');
 
@@ -121,16 +124,26 @@ export default class ValidationService {
 		}
 
 		// Order the missing data so we can insert it properly.
-		allblocks.sort((first, second) => {
-			return new BigNumber(first.id).sub(new BigNumber(second.id));
+		const ordered_tweets = alltweets.sort((first, second) => {
+			return (new BigNumber(first.id_str).lt(new BigNumber(second.id_str)) ? -1 : 1);
 		});
 
-		// console.log(allblocks);
-		// console.log(allblocks[allblocks.length-1]);
+		// Order the missing data so we can insert it properly.
+		const ordered_blocks = allblocks.sort((first, second) => {
+			return (new BigNumber(first.id).lt(new BigNumber(second.id)) ? -1 : 1);
+		});
 
-		await this.storeBlocks(allblocks);
+		// console.log('===================================================================');
+		// console.log('===================================================================');
+		// console.log('===================================================================');
+		// console.log(JSON.stringify(ordered_tweets));
+		// console.log('===================================================================');
+		// console.log('===================================================================');
+		// console.log('===================================================================');
 
-		// // console.log(JSON.stringify(ordered_data.map(block => { return block.id_str; })));
+		await this.storeBlocks(ordered_blocks);
+
+		// console.log(JSON.stringify(ordered_data.map(block => { return block.id_str; })));
 
 		// Clean up
 		while(await this.checkNonSequentialBlocks() || await this.checkNonConformingProtocol() || await this.setOrphans(PROTOCOL_LEGACY) || await this.setDeleted(PROTOCOL_LEGACY));
@@ -167,22 +180,19 @@ export default class ValidationService {
 	}
 
 	async getTaggedTweetsSince(lastblock) {
-		return await this.twitter.getHashtagged('twittercoin', lastblock)
-			.then(async (tweets) => {
-				console.log(`Got ${tweets.statuses.length} tweets for processing`);
-				return tweets.statuses.filter(tweet => { return tweet.is_quote_status; });
-			}).catch(error => {
-				console.error(error);
-			});
+		return (await this.twitter.getHashtagged('twittercoin', lastblock)).statuses;
 	}
 
 	async setOrphans(protocol) {
 		let orphans = await this.BlockModel.findAll({
 			where: {
-				// protocol: this.getProtocolSelector(protocol),
 				[Sequelize.Op.or]: [
+					// { Block_id: null },
+					{ Twitter_user_id: null },
+					// { block_number: 0, },
 					{ orphaned: true, },
 					{ deleted: true, },
+					{ protocol: 0, },
 				]
 			},
 		}).map((block) => { return block.dataValues.id });
@@ -226,15 +236,16 @@ export default class ValidationService {
 			return block.id;
 		});
 
-		const moar_tweets = (await this.twitter.getTweets(last100)).map((tweet) => {
+		const moar_tweets = await this.twitter.getTweets(last100);
+		const moar_tweet_blocks = moar_tweets.map((tweet) => {
 			return this.toBlock(tweet);
 		}).filter(block => {
 			return block.orphaned;
 		});
 
-		if(moar_tweets.length) {
+		if(moar_tweet_blocks.length) {
 			const deleted = last100.filter((block) => {
-				return !moar_tweets.some((tweet) => { return tweet.id === block; });
+				return !moar_tweet_blocks.some((tweet) => { return tweet.id === block; });
 			});
 
 			const deleted_models = await this.BlockModel.findAll({
@@ -264,6 +275,7 @@ export default class ValidationService {
 				confirmed: false,
 				orphaned: false,
 				deleted: false,
+				protocol: { [Sequelize.Op.gt]: 0 },
 				parent: Sequelize.literal('parent.block_number != Block.block_number - 1'),
 			},
 			order: [ ['block_number', 'desc'] ],
@@ -287,16 +299,18 @@ export default class ValidationService {
 				confirmed: false,
 				orphaned: false,
 				deleted: false,
+				protocol: { [Sequelize.Op.gt]: 0 },
 				block_number: { [Sequelize.Op.gt]: 100 },
-				parent: Sequelize.literal('parent.protocol != Block.protocol'),
+				parent: Sequelize.literal('( parent.protocol & Block.protocol ) != Block.protocol'),
 			},
-			order: [ ['block_number', 'desc'] ],
 			include: [
 				{ model: this.BlockModel, as: 'parent', },
 			],
 		}).map(async block => {
+			// console.log(block.dataValues.parent.dataValues.protocol, block.dataValues.protocol, ( block.dataValues.parent.dataValues.protocol & block.dataValues.protocol ));
+
 			await block.update({
-				protocol: block.parent.protocol,
+				protocol: ( block.dataValues.parent.dataValues.protocol & block.dataValues.protocol ),
 			});
 
 			return block.dataValues.Block_id;
@@ -404,30 +418,32 @@ export default class ValidationService {
 	}
 
 	getProtocol(status) {
-		if(/^[0-9]{1,}\/ #TwitterCoin @otsproofbot\n\n/i.test(status)) return PROTOCOL_STRICT100;
-		if(/[0-9]{1,}\//.test(status)) return PROTOCOL_LEGACY;
-		if(/\/[0-9]{1,}/.test(status)) return PROTOCOL_FUZZY;
-
-		return 0;
+		if(/^[0-9]{1,}\/ #TwitterCoin @otsproofbot *\n *\n/im.test(status))
+			return ( PROTOCOL_STRICT100 | PROTOCOL_LEGACY );
+		if(/[0-9]{1,}\//.test(status))
+			return PROTOCOL_LEGACY;
+		if(/\/[0-9]{1,}/.test(status))
+			return PROTOCOL_LEGACY;
 	}
 
 	getProtocolSelector(protocol) {
-		if(protocol === PROTOCOL_STRICT100) {
-			return PROTOCOL_STRICT100;
+		if(protocol & PROTOCOL_STRICT100) {
+			return Sequelize.literal('protocol & ' + PROTOCOL_STRICT100);
 		}
 
-		return { [Sequelize.Op.gt]: 0 };
+		return PROTOCOL_LEGACY;
 	}
 
 	getBlockNumber(status, protocol = this.getProtocol(status)) {
 		// console.log(protocol, status);
-		if(protocol === PROTOCOL_LEGACY)
-			return /([0-9]{1,})\//.exec(status)[1];
+		if(protocol & PROTOCOL_LEGACY) {
+			const tmp = /([0-9]{1,})\//.exec(status);
+			if(tmp)	return tmp[1];
 
-		if(protocol === PROTOCOL_FUZZY)
 			return /\/([0-9]{1,})/.exec(status)[1];
+		}
 
-		if(protocol === PROTOCOL_STRICT100)
+		if(protocol & PROTOCOL_STRICT100)
 			return /^([0-9]{1,})\//.exec(status)[1];
 
 		return null;
@@ -435,9 +451,6 @@ export default class ValidationService {
 
 	// Remove the link to the quoted text so it doesn't get matched as a block
 	getText(tweet) {
-		return tweet.full_text
-						.split(' ')
-						.slice(0,-1)
-						.join(' ');
+		return tweet.full_text;
 	}
 }
