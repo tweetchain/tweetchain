@@ -57,6 +57,30 @@ db.sequelize.sync().then(() => {
 		});
 	});
 
+	app.get('/gettop10balances', (req, res) => {
+		validator.getTopUserBalances().then(data => {
+			res.send(JSON.stringify({
+				balances: data.map(record => { return {
+					Twitter_user_screen_name: record.Twitter_user_screen_name,
+					balance: record.balance.toString(),
+				};
+			}),
+			circulation: 0,
+		}));
+	});
+});
+
+app.get('/userbalance', (req, res) => {
+		const user = req.query.user || null;
+		if(user) {
+			validator.getUserBalance(user).then(data => {
+				res.send(JSON.stringify({
+					balance: data.balance.toString(),
+				}));
+			});
+		}
+	});
+
 	https.createServer(ssl_options, app).listen(8443, function () {
 		console.log('Example app listening on port 8443!');
 	});

@@ -4,10 +4,14 @@ const Sequelize_opts = require('../../config/db.json');
 require('sequelize-hierarchy')(Sequelize);
 
 const GENESIS_TWEET = '928712955847262208';
-const CONFIRMATION_COUNT = 10;
+const CONFIRMATION_COUNT = 100;
 
+const PROTOCOL_LEGACY_STR = 'legacy';
+const PROTOCOL_STRICT100_STR = 'strict100';
 const PROTOCOL_LEGACY = 1;
 const PROTOCOL_STRICT100 = 2;
+
+const FORK_STRICT100_BLOCK = 100;
 
 export default class ValidationService {
 	constructor(db, twitter) {
@@ -217,7 +221,7 @@ export default class ValidationService {
 		}
 	}
 
-	async setDeleted(protocol, count = 100) {
+	async setDeleted(protocol, count = CONFIRMATION_COUNT) {
 		let last_block = await this.BlockModel.find({
 			where: {
 				// protocol: this.getProtocolSelector(protocol),
@@ -300,7 +304,7 @@ export default class ValidationService {
 				orphaned: false,
 				deleted: false,
 				protocol: { [Sequelize.Op.gt]: 0 },
-				block_number: { [Sequelize.Op.gt]: 100 },
+				block_number: { [Sequelize.Op.gt]: FORK_STRICT100_BLOCK},
 				parent: Sequelize.literal('( parent.protocol & Block.protocol ) != Block.protocol'),
 			},
 			include: [
@@ -321,27 +325,13 @@ export default class ValidationService {
 		return blocks.length;
 	}
 
-	async getLatestBlocks(protocol, count = 20, start = 0) {
-		if(protocol === 'strict100') protocol = PROTOCOL_STRICT100;
-		else protocol = PROTOCOL_LEGACY;
-
-		let last_block = await this.BlockModel.find({
-			where: {
-				orphaned: false,
-				deleted: false,
-				protocol: this.getProtocolSelector(protocol),
-			},
-			order: [
-				['block_number', 'DESC'],
-			],
-		});
-
+	async getLatestBlocks(protocol = PROTOCOL_LEGACY_STR, count = 20, start = 0, fn_match = null) {
+		let last_block = await this.getLatestValidBlock(protocol);
 		if(!last_block) return [];
-
-		return this.getBlocksFrom(last_block.id, count, start);
+		return this.getBlocksFrom(last_block.id, count, start, fn_match);
 	}
 
-	async getBlocksFrom(id, count = 20, start = 0) {
+	async getBlocksFrom(id, count = 20, start = 0, fn_match = null) {
 		if(!id || !id.length) return [];
 
 		let last_block = await this.BlockModel.find({
@@ -363,14 +353,81 @@ export default class ValidationService {
 		const start_orphaned = last_block.orphaned;
 		const flat_blocks = [];
 		let counter = 0;
-		do
+		do {
+			if(fn_match && !fn_match(last_block.dataValues)) continue;
+
 			if(counter++ >= start)
 				flat_blocks.push(last_block.dataValues);
-		while((flat_blocks.length < count)
+		} while((flat_blocks.length < count)
 			&& ( last_block = await last_block.getParent() )
 			&& ( last_block.orphaned === start_orphaned ));
 
 		return flat_blocks;
+	}
+
+	// Defaults to legacy (for now), this will retrieve the latest of either of the first 2 chains for now, which ever is highest
+	async getLatestValidBlock(protocol = PROTOCOL_LEGACY_STR, where = {}) {
+		if(protocol === PROTOCOL_STRICT100_STR) protocol = PROTOCOL_STRICT100;
+		else protocol = PROTOCOL_LEGACY;
+
+		where.orphaned = false;
+		where.deleted = false;
+		where.protocol = this.getProtocolSelector(protocol);
+
+		return await this.BlockModel.find({
+			where: where,
+			order: [
+				['block_number', 'DESC'],
+			],
+		});
+	}
+
+	// Get User balance
+	async getUserBalance(twitter_screen_name) {
+		const last_block = await this.getLatestValidBlock('legacy');
+
+		const users_blocks = (await this.getLatestBlocks('legacy', last_block.block_number + 1, 0, (block) => {
+			return block.Twitter_user_screen_name === twitter_screen_name;
+		}));
+
+		const users_balance = users_blocks.reduce((accum, block) => {
+			const blocks_since = last_block.block_number - block.block_number + 1;
+
+			for(let x = 1; x <= blocks_since; ++x) accum = accum.add(new BigNumber(1).div(x));
+
+			return accum;
+		}, new BigNumber(0));
+
+		return users_balance;
+	}
+
+	async getTopUserBalances(count = 10) {
+		const last_block = await this.getLatestValidBlock('legacy');
+
+		const valid_blocks = await this.getLatestBlocks('legacy', last_block.block_number + 1);
+
+		const user_balances = valid_blocks.reduce((accum, block) => {
+			const screen_name = block.Twitter_user_screen_name;
+
+			if(!accum[screen_name]) accum[screen_name] = new BigNumber(0);
+
+			const blocks_since = last_block.block_number - block.block_number + 1;
+
+			for(let x = 1; x <= blocks_since; ++x)
+				accum[screen_name] = new BigNumber(accum[screen_name]).add(new BigNumber(1).div(x));
+
+			return accum;
+		}, {});
+
+		const balances_arr = [];
+		for(const key in user_balances) {
+			balances_arr.push({ Twitter_user_screen_name: key, balance: user_balances[key] });
+		}
+		balances_arr.sort((a, b) => {
+			return b.balance.sub(a.balance).toNumber();
+		})
+
+		return balances_arr.slice(0, count);
 	}
 
 	async storeBlocks(blocks) {
