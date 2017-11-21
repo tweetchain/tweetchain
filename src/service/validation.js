@@ -148,11 +148,11 @@ export default class ValidationService {
 		// console.log(JSON.stringify(ordered_data.map(block => { return block.id_str; })));
 
 		// Clean up
-		// while(await this.checkNonSequentialBlocks() || await this.checkNonConformingProtocol() || await this.setOrphans(PROTOCOL_LEGACY) || await this.setDeleted(PROTOCOL_LEGACY));
-		// while(await this.checkNonSequentialBlocks() || await this.checkNonConformingProtocol() || await this.setOrphans(PROTOCOL_STRICT100) || await this.setDeleted(PROTOCOL_STRICT100));
+		while(await this.checkNonSequentialBlocks() || await this.checkNonConformingProtocol() || await this.setOrphans(PROTOCOL_LEGACY) || await this.setDeleted(PROTOCOL_LEGACY));
+		while(await this.checkNonSequentialBlocks() || await this.checkNonConformingProtocol() || await this.setOrphans(PROTOCOL_STRICT100) || await this.setDeleted(PROTOCOL_STRICT100));
 
 		// Submit outstanding OTS records
-		// await this.checkOTS();
+		await this.checkOTS();
 		// Check if any have been upgraded
 		await this.checkOTSConfirmations();
 	}
@@ -441,11 +441,13 @@ export default class ValidationService {
 			order: [
 				['block_number', 'DESC'],
 			],
-			include: {
-				model: this.BlockModel,
-				as: 'descendents',
-				hierarchy: true,
-			},
+			// include: [
+			// 	{
+			// 		model: this.BlockModel,
+			// 		as: 'descendents',
+			// 		hierarchy: true,
+			// 	},
+			// ],
 		});
 
 		if(!last_block) return [];
@@ -453,14 +455,28 @@ export default class ValidationService {
 		const start_orphaned = last_block.orphaned;
 		const flat_blocks = [];
 		let counter = 0;
-		do
+		do {
+			last_block.ots = await this.OTSModel.find({
+				where: { Block_id: last_block.id, },
+				order: [
+					[ 'created_at', 'DESC'],
+				],
+			});
+
 			if(counter++ >= start)
-				flat_blocks.push(last_block.dataValues);
-		while((flat_blocks.length < count)
+				flat_blocks.push(last_block);
+		} while((flat_blocks.length < count)
 			&& ( last_block = await last_block.getParent() )
 			&& ( last_block.orphaned === start_orphaned ));
 
-		return flat_blocks;
+		return flat_blocks.map(block => {
+			// console.log(block);
+			if(block.ots) {
+				block.dataValues.upgraded_ots = block.ots.upgraded_ots;
+				block.dataValues.ots = block.ots.ots;
+			}
+			return block.dataValues;
+		});
 	}
 
 	async storeBlocks(blocks) {

@@ -13,8 +13,8 @@ export default class OTSService {
 			return ('0' + d.toString(16)).slice(-2);
 		}
 
-		const file = Buffer.from(data);
-		const detached = OpenTimestamps.DetachedTimestampFile.fromBytes(new OpenTimestamps.Ops.OpSHA256(), file);
+		let file = Buffer.from(data);
+		let detached = OpenTimestamps.DetachedTimestampFile.fromBytes(new OpenTimestamps.Ops.OpSHA256(), file);
 		const sha256 = detached.timestamp.msg.reduce((accum, point) => { return accum += d2h(point); }, '');
 
 		const record = extra;
@@ -39,14 +39,17 @@ export default class OTSService {
 						ots: detached.serializeToBytes().reduce((accum, point) => { return accum += d2h(point); }, ''),
 					});
 				});
-			} else {
+			} else if(!timestamp.upgraded_ots) {
 				console.log('Timestamp ' + sha256 + ' exists.');
 
 				// Check if this timestamp has been confirmed
 				if(timestamp.upgraded_ots === null) {
+					file = Buffer.from(timestamp.ots, 'hex');
+					detached = OpenTimestamps.DetachedTimestampFile.deserialize(file);
+
 					console.log('Checking if upgrade is available');
+
 					return OpenTimestamps.upgrade(detached).then((changed) => {
-						console.log(changed);
 						if(changed) {
 							console.log('Timestamp upgraded, updating OTS record');
 							return timestamp.update({
