@@ -1,6 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 import Sequelize from 'sequelize';
+import Umzug from 'umzug';
+
 require('sequelize-hierarchy')(Sequelize);
 
 var basename = path.basename(__filename);
@@ -28,6 +30,21 @@ fs
 		var model = sequelize.import(path.join(__dirname, file));
 		db[model.name] = model;
 	});
+
+const umzug = new Umzug({
+	storage: "sequelize",
+	storageOptions: {
+		sequelize: sequelize
+	},
+	migrations: {
+		params: [
+			sequelize.getQueryInterface(),
+			Sequelize
+		],
+		path: path.join(__dirname, "../migrations")
+	}
+});
+umzug.up();
 
 Object.keys(db).forEach(modelName => {
 	if (db[modelName].associate) {

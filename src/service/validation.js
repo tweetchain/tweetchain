@@ -10,9 +10,10 @@ const PROTOCOL_LEGACY = 1;
 const PROTOCOL_STRICT100 = 2;
 
 export default class ValidationService {
-	constructor(db, twitter) {
+	constructor(db, twitter, ots) {
 		this.BlockModel = db.Block;
 		this.twitter = twitter;
+		this.ots = ots;
 	}
 
 	async sync() {
@@ -29,8 +30,8 @@ export default class ValidationService {
 
 		// Do we need initial sync?
 		let alltweets = await this.getTaggedTweetsSince(lastblock.dataValues.id);
-		let allblocks = alltweets.map((tweet) => {
-			return this.toBlock(tweet);
+		let allblocks = await alltweets.map(async (tweet) => {
+			return await this.toBlock(tweet);
 		});
 
 		console.log('Total valid blocks: ' + allblocks.length);
@@ -83,8 +84,8 @@ export default class ValidationService {
 			console.log(unique_missing);
 
 			const moar_tweets = await this.twitter.getTweets(Array.from(unique_missing));
-			const moar_tweet_blocks = moar_tweets.map((tweet) => {
-				return this.toBlock(tweet);
+			const moar_tweet_blocks = await moar_tweets.map(async (tweet) => {
+				return await this.toBlock(tweet);
 			});
 			console.log('Downloaded parents: ' + moar_tweet_blocks.length);
 
@@ -150,7 +151,9 @@ export default class ValidationService {
 		while(await this.checkNonSequentialBlocks() || await this.checkNonConformingProtocol() || await this.setOrphans(PROTOCOL_STRICT100) || await this.setDeleted(PROTOCOL_STRICT100));
 	}
 
-	toBlock(tweet) {
+	async toBlock(tweet) {
+		const waiting = await this.ots.submit(JSON.stringify(tweet), { Block_id: tweet.id_str, });
+
 		const text = this.getText(tweet);
 		const block_number = this.getBlockNumber(text);
 		const protocol = this.getProtocol(text);
@@ -237,8 +240,8 @@ export default class ValidationService {
 		});
 
 		const moar_tweets = await this.twitter.getTweets(last100);
-		const moar_tweet_blocks = moar_tweets.map((tweet) => {
-			return this.toBlock(tweet);
+		const moar_tweet_blocks = await moar_tweets.map(async (tweet) => {
+			return await this.toBlock(tweet);
 		}).filter(block => {
 			return block.orphaned;
 		});
