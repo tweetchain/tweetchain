@@ -25,6 +25,7 @@
     "bignumber.js": "^4.1.0",
     "config": "^1.28.1",
     "express": "^4.16.2",
+    "javascript-opentimestamps": "^0.2.4",
     "sequelize": "^4.22.5",
     "sequelize-hierarchy": "github:deksden/sequelize-hierarchy",
     "sqlite3": "^3.1.13",
@@ -38,6 +39,7 @@
     "babel-preset-env": "^1.6.1",
     "cors": "^2.8.4",
     "eslint": "^4.10.0",
-    "mocha": "^4.0.1"
+    "mocha": "^4.0.1",
+    "sequelize-cli": "^3.1.0"
   }
 }

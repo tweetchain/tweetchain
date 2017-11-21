@@ -1,14 +1,16 @@
 import db from '../db/models'
 import TwitterService from './service/twitter';
 import ValidationService from './service/validation';
+import OTSService from './service/ots';
 
 const twitter = new TwitterService();
-const validator = new ValidationService(db, twitter);
+const ots = new OTSService(db);
+const validator = new ValidationService(db, twitter, ots);
 
 db.sequelize.sync().then(() => {
 	twitter.connect().then(() => {
 		return validator.sync();
 	}).then(() => {
-		twitter.getTweets(['932550019730890752']).then(console.log);
+		return true;
 	});
 });

@@ -2,97 +2,99 @@ module.exports = {
 	up: (queryInterface, Sequelize) => {
 		return queryInterface.createTable('Block', {
 			id: {
-				type: DataTypes.STRING(64),
+				type: Sequelize.STRING(64),
 				// allowNull: false,
 				primaryKey: true,
 			},
 			Block_id: {
-				type: DataTypes.STRING(64),
+				type: Sequelize.STRING(64),
 				allowNull: true
 			},
 			Twitter_user_id: {
-				type: DataTypes.STRING(64),
+				type: Sequelize.STRING(64),
 				allowNull: true,
 			},
 			protocol: {
-				type: DataTypes.INTEGER,
+				type: Sequelize.INTEGER,
 				allowNull: false
 			},
 			block_number: {
-				type: DataTypes.INTEGER,
+				type: Sequelize.INTEGER,
 				allowNull: false,
 			},
 			confirmed: {
-				type: DataTypes.BOOLEAN,
+				type: Sequelize.BOOLEAN,
 				defaultValue: false
 			},
 			orphaned: {
-				type: DataTypes.BOOLEAN,
+				type: Sequelize.BOOLEAN,
 				defaultValue: false
 			},
 			deleted: {
-				type: DataTypes.BOOLEAN,
+				type: Sequelize.BOOLEAN,
 				defaultValue: false,
 			},
 			text: {
-				type: DataTypes.STRING(300),
+				type: Sequelize.STRING(300),
 				allowNull: true,
 			},
 			Twitter_created_at: {
-				type: DataTypes.DATE,
+				type: Sequelize.DATE,
 				allowNull: true,
 			},
 			Twitter_retweet_count: {
-				type: DataTypes.INTEGER,
+				type: Sequelize.INTEGER,
 				defaultValue: 0,
 			},
 			Twitter_favorite_count: {
-				type: DataTypes.INTEGER,
+				type: Sequelize.INTEGER,
 				defaultValue: 0,
 			},
 			Twitter_user_name: {
-				type: DataTypes.STRING(50),
+				type: Sequelize.STRING(50),
 				allowNull: true
 			},
 			Twitter_user_screen_name: {
 				/* https://developer.twitter.com/en/docs/tweets/data-dictionary/overview/user-object */
 				/* Typically a maximum of 15 characters long, but some historical accounts may exist with longer names*/
-				type: DataTypes.STRING(32),
+				type: Sequelize.STRING(32),
 				allowNull: true
 			},
 			Twitter_user_description: {
-				type: DataTypes.STRING(256),
+				type: Sequelize.STRING(256),
 				allowNull: true
 			},
 			Twitter_user_verified: {
-				type: DataTypes.BOOLEAN,
+				type: Sequelize.BOOLEAN,
 				defaultValue: false,
 			},
 			Twitter_user_followers_count: {
-				type: DataTypes.INTEGER,
+				type: Sequelize.INTEGER,
 				defaultValue: 0,
 			},
 			Twitter_user_friends_count: {
-				type: DataTypes.INTEGER,
+				type: Sequelize.INTEGER,
 				defaultValue: 0,
 			},
 			Twitter_user_created_at: {
-				type: DataTypes.DATE,
+				type: Sequelize.DATE,
 				allowNull: true,
 			},
-		},{
-			createdAt: {
-				type: Sequelize.DATE
+			created_at: {
+				type: Sequelize.DATE,
+				allowNull: false,
 			},
-			updatedAt: {
-				type: Sequelize.DATE
+			updated_at: {
+				type: Sequelize.DATE,
+				allowNull: false,
 			},
-			deletedAt: {
-				type: Sequelize.DATE
-			}
-		})
+			deleted_at: {
+				type: Sequelize.DATE,
+				allowNull: true,
+			},
+		});
 	},
 	down: (queryInterface, Sequelize) => {
-		return queryInterface.dropTable('Block')
+		return queryInterface.dropTable('Block');
 	}
 }
