@@ -30,7 +30,6 @@
     "sequelize-hierarchy": "github:deksden/sequelize-hierarchy",
     "sqlite3": "^3.1.13",
     "twitter": "^1.7.1",
-    "umzug": "^2.1.0",
     "uuid": "^3.1.0"
   },
   "devDependencies": {
