@@ -92,7 +92,7 @@ module.exports = function(sequelize, DataTypes) {
 	});
 
 	Block.associate = function(models) {
-		// Block.hasOne(models.OTS, { targetKey: 'Block_id', });
+		Block.hasMany(models.OTS, { as: 'ots', foreignKey: 'Block_id', targetKey: 'id', });
 		// Block.hasMany(Block, { as: 'children', foreignKey: 'Block_id', constraints: false, })
 		// Block.belongsTo(Block, { as: 'parent', foreignKey: 'Block_id', constraints: false, })
 	};

@@ -5,10 +5,6 @@ module.exports = {
 				type: Sequelize.INTEGER,
 				primaryKey: true,
 			},
-			Block_id: {
-				type: Sequelize.STRING(64),
-				allowNull: false,
-			},
 			sha256: {
 				type: Sequelize.STRING(64),
 				allowNull: false,
@@ -25,19 +21,21 @@ module.exports = {
 				type: Sequelize.TEXT('medium'),
 				allowNull: true,
 			},
-		},{
-			createdAt: {
-				type: Sequelize.DATE
+			created_at: {
+				type: Sequelize.DATE,
+				allowNull: false,
 			},
-			updatedAt: {
-				type: Sequelize.DATE
+			updated_at: {
+				type: Sequelize.DATE,
+				allowNull: false,
 			},
-			deletedAt: {
-				type: Sequelize.DATE
-			}
-		})
+			deleted_at: {
+				type: Sequelize.DATE,
+				allowNull: true,
+			},
+		});
 	},
 	down: (queryInterface, Sequelize) => {
-		return queryInterface.dropTable('OTS')
+		return queryInterface.dropTable('OTS');
 	}
 }

@@ -80,19 +80,21 @@ module.exports = {
 				type: Sequelize.DATE,
 				allowNull: true,
 			},
-		},{
-			createdAt: {
-				type: Sequelize.DATE
+			created_at: {
+				type: Sequelize.DATE,
+				allowNull: false,
 			},
-			updatedAt: {
-				type: Sequelize.DATE
+			updated_at: {
+				type: Sequelize.DATE,
+				allowNull: false,
 			},
-			deletedAt: {
-				type: Sequelize.DATE
-			}
-		})
+			deleted_at: {
+				type: Sequelize.DATE,
+				allowNull: true,
+			},
+		});
 	},
 	down: (queryInterface, Sequelize) => {
-		return queryInterface.dropTable('Block')
+		return queryInterface.dropTable('Block');
 	}
 }

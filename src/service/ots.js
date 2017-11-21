@@ -17,26 +17,51 @@ export default class OTSService {
 		const detached = OpenTimestamps.DetachedTimestampFile.fromBytes(new OpenTimestamps.Ops.OpSHA256(), file);
 		const sha256 = detached.timestamp.msg.reduce((accum, point) => { return accum += d2h(point); }, '');
 
-		const timestamp = await this.OTSModel.find({
+		const record = extra;
+		record.sha256 = sha256;
+		record.data = data;
+
+		// console.log(record);
+
+		return this.OTSModel.findOrCreate({
 			where: {
 				sha256: sha256,
+			},
+			defaults: record,
+		}).spread((timestamp, created) => {
+			// Stamp the message
+			if(created || !timestamp.ots) {
+				console.log('Timestamp doesn\'t exist, creating ' + sha256 + '...');
+
+				return OpenTimestamps.stamp(detached).then(() => {
+					console.log('Timestamp created, updating OTS signature.');
+					return timestamp.update({
+						ots: detached.serializeToBytes().reduce((accum, point) => { return accum += d2h(point); }, ''),
+					});
+				});
+			} else {
+				console.log('Timestamp ' + sha256 + ' exists.');
+
+				// Check if this timestamp has been confirmed
+				if(timestamp.upgraded_ots === null) {
+					console.log('Checking if upgrade is available');
+					return OpenTimestamps.upgrade(detached).then((changed) => {
+						console.log(changed);
+						if(changed) {
+							console.log('Timestamp upgraded, updating OTS record');
+							return timestamp.update({
+								upgraded_ots: detached.serializeToBytes().reduce((accum, point) => { return accum += d2h(point); }, ''),
+							});
+						} else {
+							console.log('Timestamp not upgraded yet...');
+						}
+					});
+				}
 			}
-		});
 
-		// Stamp the message
-		if(!timestamp) {
-			console.log('Timestamp doesn\'t exist, creating...');
+			return true;
+		}).catch(console.error);
 
-			await OpenTimestamps.stamp(detached);
-
-			const record = extra;
-			record.sha256 = sha256;
-			record.ots = detached.serializeToBytes().reduce((accum, point) => { return accum += d2h(point); }, '');
-			record.data = data;
-
-			return this.OTSModel.create(record);
-		} else {
-			console.log('Timestamp exists!');
-		}
+		return false;
 	}
 }

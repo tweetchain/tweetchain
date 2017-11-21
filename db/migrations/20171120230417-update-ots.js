@@ -4,8 +4,8 @@ module.exports = {
 			type: 'UNIQUE',
 			after: 'id',
 			references: {
-				table: 'Block',
-				field: 'id',
+				model: 'Block',
+				key: 'id',
 			},
 		});
 	},

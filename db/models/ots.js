@@ -4,22 +4,27 @@ module.exports = function(sequelize, DataTypes) {
 		id: {
 			type: DataTypes.INTEGER,
 			primaryKey: true,
+			autoIncrement: true,
 		},
 		Block_id: {
 			type: DataTypes.STRING(64),
 			allowNull: false,
+			references: {
+				model: 'Block',
+				key: 'id',
+			},
 		},
 		sha256: {
 			type: DataTypes.STRING(64),
 			allowNull: false,
 		},
-		ots: {
-			type: DataTypes.TEXT('medium'),
-			allowNull: false,
-		},
 		data: {
 			type: DataTypes.TEXT('medium'),
 			allowNull: false,
+		},
+		ots: {
+			type: DataTypes.TEXT('medium'),
+			allowNull: true,
 		},
 		upgraded_ots: {
 			type: DataTypes.TEXT('medium'),
@@ -35,7 +40,7 @@ module.exports = function(sequelize, DataTypes) {
 	});
 
 	OTS.associate = function(models) {
-		// OTS.belongsTo(models.Block, { targetKey: 'id', foreignKey: 'Block_id', })
+		OTS.belongsTo(models.Block, { as: 'block', foreignKey: 'id', targetKey: 'Block_id', })
 	};
 
 	return OTS;

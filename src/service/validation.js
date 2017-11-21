@@ -12,6 +12,7 @@ const PROTOCOL_STRICT100 = 2;
 export default class ValidationService {
 	constructor(db, twitter, ots) {
 		this.BlockModel = db.Block;
+		this.OTSModel = db.OTS;
 		this.twitter = twitter;
 		this.ots = ots;
 	}
@@ -30,8 +31,8 @@ export default class ValidationService {
 
 		// Do we need initial sync?
 		let alltweets = await this.getTaggedTweetsSince(lastblock.dataValues.id);
-		let allblocks = await alltweets.map(async (tweet) => {
-			return await this.toBlock(tweet);
+		let allblocks = alltweets.map((tweet) => {
+			return this.toBlock(tweet);
 		});
 
 		console.log('Total valid blocks: ' + allblocks.length);
@@ -84,8 +85,8 @@ export default class ValidationService {
 			console.log(unique_missing);
 
 			const moar_tweets = await this.twitter.getTweets(Array.from(unique_missing));
-			const moar_tweet_blocks = await moar_tweets.map(async (tweet) => {
-				return await this.toBlock(tweet);
+			const moar_tweet_blocks = moar_tweets.map((tweet) => {
+				return this.toBlock(tweet);
 			});
 			console.log('Downloaded parents: ' + moar_tweet_blocks.length);
 
@@ -147,12 +148,54 @@ export default class ValidationService {
 		// console.log(JSON.stringify(ordered_data.map(block => { return block.id_str; })));
 
 		// Clean up
-		while(await this.checkNonSequentialBlocks() || await this.checkNonConformingProtocol() || await this.setOrphans(PROTOCOL_LEGACY) || await this.setDeleted(PROTOCOL_LEGACY));
-		while(await this.checkNonSequentialBlocks() || await this.checkNonConformingProtocol() || await this.setOrphans(PROTOCOL_STRICT100) || await this.setDeleted(PROTOCOL_STRICT100));
+		// while(await this.checkNonSequentialBlocks() || await this.checkNonConformingProtocol() || await this.setOrphans(PROTOCOL_LEGACY) || await this.setDeleted(PROTOCOL_LEGACY));
+		// while(await this.checkNonSequentialBlocks() || await this.checkNonConformingProtocol() || await this.setOrphans(PROTOCOL_STRICT100) || await this.setDeleted(PROTOCOL_STRICT100));
+
+		// Submit outstanding OTS records
+		// await this.checkOTS();
+		// Check if any have been upgraded
+		await this.checkOTSConfirmations();
 	}
 
-	async toBlock(tweet) {
-		const waiting = await this.ots.submit(JSON.stringify(tweet), { Block_id: tweet.id_str, });
+	toStandardTweet(tweet) {
+		return {
+			id_str: tweet.id_str,
+			full_text: tweet.full_text,
+			retweet_count: tweet.retweet_count,
+			favorite_count: tweet.favorite_count,
+			created_at: tweet.created_at,
+			user: {
+				id_str: tweet.user.id_str,
+				name: tweet.user.name,
+				screen_name: tweet.user.screen_name,
+				description: tweet.user.description,
+				verified: tweet.user.verified,
+				created_at: tweet.user.created_at,
+			},
+			is_quote_status: tweet.is_quote_status,
+			quoted_status_id_str: tweet.quoted_status_id_str,
+			quoted_status: (!tweet.is_quote_status || !tweet.quoted_status ? null : {
+				id_str: tweet.quoted_status.id_str,
+				full_text: tweet.quoted_status.full_text,
+				retweet_count: tweet.quoted_status.retweet_count,
+				favorite_count: tweet.quoted_status.favorite_count,
+				created_at: tweet.quoted_status.created_at,
+				user: {
+					id_str: tweet.quoted_status.user.id_str,
+					name: tweet.quoted_status.user.name,
+					screen_name: tweet.quoted_status.user.screen_name,
+					description: tweet.quoted_status.user.description,
+					verified: tweet.quoted_status.user.verified,
+					created_at: tweet.quoted_status.user.created_at,
+				},
+				is_quote_status: tweet.is_quote_status,
+				quoted_status_id_str: tweet.quoted_status_id_str,
+			}),
+		};
+	}
+
+	toBlock(tweet) {
+		tweet = this.toStandardTweet(tweet);
 
 		const text = this.getText(tweet);
 		const block_number = this.getBlockNumber(text);
@@ -176,8 +219,8 @@ export default class ValidationService {
 			Twitter_user_screen_name: tweet.user.screen_name,
 			Twitter_user_description: tweet.user.description,
 			Twitter_user_verified: tweet.user.verified,
-			Twitter_user_followers_count: tweet.user.followers_count,
-			Twitter_user_friends_count: tweet.user.friends_count,
+			// Twitter_user_followers_count: tweet.user.followers_count,
+			// Twitter_user_friends_count: tweet.user.friends_count,
 			Twitter_user_created_at: tweet.user.created_at,
 		};
 	}
@@ -240,8 +283,8 @@ export default class ValidationService {
 		});
 
 		const moar_tweets = await this.twitter.getTweets(last100);
-		const moar_tweet_blocks = await moar_tweets.map(async (tweet) => {
-			return await this.toBlock(tweet);
+		const moar_tweet_blocks = moar_tweets.map((tweet) => {
+			return this.toBlock(tweet);
 		}).filter(block => {
 			return block.orphaned;
 		});
@@ -322,6 +365,50 @@ export default class ValidationService {
 		if(blocks.length === 1) console.log(blocks);
 		console.log(`${blocks.length} Invalid protocols`);
 		return blocks.length;
+	}
+
+	async checkOTS() {
+		const blocks = await this.BlockModel.findAll({
+			where: {
+				deleted: false,
+				ots: Sequelize.literal('ots.ots IS NULL'),
+			},
+			include: [
+				{ model: this.OTSModel, as: 'ots', },
+			],
+		});
+
+		// console.log(blocks);
+		console.log('Getting '+blocks.length+' tweets from blocks');
+		const tweets = await this.twitter.getTweets(blocks.map(block => {
+			return block.dataValues.id;
+		}));
+		tweets.sort((first, second) => {
+			return (new BigNumber(first.id_str).lt(new BigNumber(second.id_str)) ? -1 : 1);
+		});
+
+		console.log('Submitting '+tweets.length+' tweets to OpenTimestamps');
+		for(const tweet of tweets) {
+			await this.ots.submit(JSON.stringify(this.toStandardTweet(tweet)), { Block_id: tweet.id_str, });
+		}
+	}
+
+	async checkOTSConfirmations() {
+		const ots_records = await this.OTSModel.findAll({
+			where: {
+				upgraded_ots: null,
+			},
+		}).map(async record => {
+			return {
+				Block_id: record.dataValues.Block_id,
+				data: record.dataValues.data,
+			};
+		});
+
+		console.log('Submitting '+ots_records.length+' tweets to OpenTimestamps for upgrade');
+		for(const record of ots_records) {
+			await this.ots.submit(record.data, { Block_id: record.Block_id, });
+		}
 	}
 
 	async getLatestBlocks(protocol, count = 20, start = 0) {
