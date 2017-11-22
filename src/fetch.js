@@ -23,11 +23,12 @@ switch (myArgs[0]) {
 		break;
 	default:
 		console.log('Sorry, that is not something I know how to do.');
+		break;
 }
 
 db.sequelize.sync().then(() => {
 	twitter.connect().then(() => {
-		// return validator.sync(start);
+		return validator.sync(start);
 		return true;
 	}).then(() => {
 		// twitter.getTweets(['932550248567918592']).then(tweets => {
