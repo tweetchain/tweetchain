@@ -57,6 +57,32 @@ db.sequelize.sync().then(() => {
 		});
 	});
 
+	app.get('/getstoredids', (req, res) => {
+		db.Block.findAll({
+				where: {
+					orphaned: false,
+					deleted: false,
+				}
+			}).then(results => {
+				res.send(results.reduce((accum, block) => {
+					return accum + `${block.dataValues.id}\n`;
+				}, ''));
+			});
+	});
+
+	app.get('/getstoredlinks', (req, res) => {
+		db.Block.findAll({
+				where: {
+					orphaned: false,
+					deleted: false,
+				}
+			}).then(results => {
+				res.send(results.reduce((accum, block) => {
+					return accum + `https://twitter.com/statuses/${block.dataValues.id}/\n`;
+				}, ''));
+			});
+	});
+
 	https.createServer(ssl_options, app).listen(8443, function () {
 		console.log('Example app listening on port 8443!');
 	});

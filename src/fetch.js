@@ -27,7 +27,7 @@ switch (myArgs[0]) {
 
 db.sequelize.sync().then(() => {
 	twitter.connect().then(() => {
-		return validator.sync(start);
+		// return validator.sync(start);
 		return true;
 	}).then(() => {
 		// twitter.getTweets(['932550248567918592']).then(tweets => {
@@ -37,6 +37,8 @@ db.sequelize.sync().then(() => {
 		// 			moar_parents.push(tweet.in_reply_to_status_id_str);
 		// 	}
 		// });
+		//
+
 		return true;
 	});
 });
