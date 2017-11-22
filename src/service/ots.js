@@ -29,8 +29,9 @@ export default class OTSService {
 			},
 			defaults: record,
 		}).spread((timestamp, created) => {
+			// console.log(timestamp, created);
 			// Stamp the message
-			if(created || !timestamp.ots) {
+			if(created || !timestamp.dataValues.ots) {
 				console.log('Timestamp doesn\'t exist, creating ' + sha256 + '...');
 
 				return OpenTimestamps.stamp(detached).then(() => {
@@ -39,27 +40,27 @@ export default class OTSService {
 						ots: detached.serializeToBytes().reduce((accum, point) => { return accum += d2h(point); }, ''),
 					});
 				});
-			} else if(!timestamp.upgraded_ots) {
+			} else if(!timestamp.dataValues.upgraded_ots || timestamp.dataValues.ots === timestamp.dataValues.upgraded_ots) {
 				console.log('Timestamp ' + sha256 + ' exists.');
 
 				// Check if this timestamp has been confirmed
-				if(timestamp.upgraded_ots === null) {
-					file = Buffer.from(timestamp.ots, 'hex');
-					detached = OpenTimestamps.DetachedTimestampFile.deserialize(file);
+				// if(timestamp.dataValues.upgraded_ots === null) {
+				file = Buffer.from(timestamp.dataValues.ots, 'hex');
+				detached = OpenTimestamps.DetachedTimestampFile.deserialize(file);
 
-					console.log('Checking if upgrade is available');
+				console.log('Checking if upgrade is available');
 
-					return OpenTimestamps.upgrade(detached).then((changed) => {
-						if(changed) {
-							console.log('Timestamp upgraded, updating OTS record');
-							return timestamp.update({
-								upgraded_ots: detached.serializeToBytes().reduce((accum, point) => { return accum += d2h(point); }, ''),
-							});
-						} else {
-							console.log('Timestamp not upgraded yet...');
-						}
-					});
-				}
+				return OpenTimestamps.upgrade(detached).then((changed) => {
+					if(changed) {
+						console.log('Timestamp upgraded, updating OTS record');
+						return timestamp.update({
+							upgraded_ots: detached.serializeToBytes().reduce((accum, point) => { return accum += d2h(point); }, ''),
+						});
+					} else {
+						console.log('Timestamp not upgraded yet...');
+					}
+				});
+				// }
 			}
 
 			return true;
