@@ -17,180 +17,144 @@ export default class ValidationService {
 		this.ots = ots;
 	}
 
-	async sync(starting_block) {
-		let lastblock = 0;
+	async sync(starting_tweet) {
+		const tweets = await this.getAllTweets(starting_tweet);
+		const blocks = tweets.map((tweet) => { return this.toBlock(tweet); });
 
-		if(starting_block) lastblock = { dataValues: { id: starting_block, } };
-		if(!lastblock) {
-			lastblock = await this.BlockModel.find({
-						order: [
-							['id', 'DESC'],
-						],
-					})
-				|| { dataValues: { id: GENESIS_TWEET, } };
-		}
-
-		console.log(`Last tweet is ${lastblock.dataValues.id}`);
-
-		// Do we need initial sync?
-		let alltweets = await this.getTaggedTweetsSince(lastblock.dataValues.id);
-		let allblocks = alltweets.map((tweet) => {
-			return this.toBlock(tweet);
-		});
-
-		console.log('Total valid blocks: ' + allblocks.length);
-		console.log('===========================');
-
-		const _get_w_no_parent = async ( blocks, parent_key = 'Block_id' ) => {
-			const already_stored = await this.BlockModel.findAll({
-				where: {
-					id: {
-						[Sequelize.Op.in]: blocks.filter(block => { return block[parent_key]; }).map(block => { return block[parent_key]; }),
-					},
-				},
-			});
-
-			return blocks.filter((block) => {
-				if(block.deleted) {
-					// console.log(`Block not missing due to deleted`);
-					return false;
-				}
-
-				// For top level genesis blocks
-				if(!block[parent_key]) {
-					// console.log(`Block not missing due to no block id`);
-					return false;
-				}
-
-				if(blocks.some((parent_block) => {
-					return parent_block.deleted || (parent_block.id === block[parent_key]);
-				})) {
-					// console.log(`Block not missing due to found in self`);
-					return false;
-				}
-
-				// console.log(already_stored);
-				if(already_stored.some(stored => { return stored.dataValues.id === block[parent_key] })) {
-					// console.log(`Block not missing due to not found in database`);
-					return false;
-				}
-
-				return true;
-			});
-		};
-
-		let missing = await _get_w_no_parent(allblocks);
-		// This apply doesn't work!
-		Array.prototype.push.apply(missing, await _get_w_no_parent(allblocks, 'Block_id_reply'));
-		while(missing.length) {
-			console.log('Missing parents: ' + missing.length);
-
-			const missing_quotes = missing.filter(block => {
-				return (block.Block_id !== null && block.Block_id !== undefined);
-			}).map((block) => {
-				return block.Block_id;
-			});
-
-			const missing_replies = missing.filter(block => {
-				return (block.Block_id_reply!== null && block.Block_id_reply!== undefined);
-			}).map((block) => {
-				return block.Block_id_reply;
-			});
-
-			const unique_missing = Array.from(new Set(missing_quotes.concat(missing_replies)));
-
-			console.log('Unique missing parents: ' + unique_missing.length);
-			console.log(unique_missing);
-
-			const moar_tweets = await this.twitter.getTweets(Array.from(unique_missing));
-			const moar_tweet_blocks = moar_tweets.map((tweet) => {
-				return this.toBlock(tweet);
-			});
-			console.log('Downloaded parents: ' + moar_tweet_blocks.length);
-
-			// console.log(missing);
-			// console.log(moar_tweet_blocks);
-
-			// If we haven't retrieved the same number of tweets as we had unique_missing than some have been deleted, we should mark those as orphaned
-			if(moar_tweet_blocks.length !== unique_missing.length) {
-				const parents_deleted = unique_missing.filter((parent_id) => {
-					return !moar_tweet_blocks.some((tweet) => { return tweet.id === parent_id; });
-				});
-
-				for(const curparent of parents_deleted) {
-					const phantom = {
-						id: curparent,
-						Block_id: null,
-						text: '',
-						protocol: 0,
-						block_number: 0,
-						deleted: true,
-						orphaned: false,
-					};
-					moar_tweet_blocks.push(phantom);
-				}
-
-				console.log('Parent blocks have since been deleted: ', JSON.stringify(parents_deleted));
-			}
-
-			Array.prototype.push.apply(alltweets, moar_tweets);
-			Array.prototype.push.apply(allblocks, moar_tweet_blocks);
-			console.log('Total tweets: ' + alltweets.length);
-			console.log('Total blocks: ' + allblocks.length);
-			console.log('===========================');
-
-			// Any more missing parents?
-			missing = await _get_w_no_parent(allblocks);
-			Array.prototype.push.apply(missing, await _get_w_no_parent(allblocks, 'Block_id_reply'));
-		}
-
-		// Order the missing data so we can insert it properly.
-		const ordered_tweets = alltweets.sort((first, second) => {
-			return (new BigNumber(first.id_str).lt(new BigNumber(second.id_str)) ? -1 : 1);
-		});
-
-		// Order the missing data so we can insert it properly.
-		const ordered_blocks = allblocks.sort((first, second) => {
-			return (new BigNumber(first.id).lt(new BigNumber(second.id)) ? -1 : 1);
-		});
-
-		// console.log('===================================================================');
-		// console.log('===================================================================');
-		// console.log('===================================================================');
-		// console.log(JSON.stringify(ordered_tweets));
-		// console.log('===================================================================');
-		// console.log('===================================================================');
-		// console.log('===================================================================');
-
-		await this.storeBlocks(ordered_blocks);
-
-		// console.log(JSON.stringify(ordered_data.map(block => { return block.id_str; })));
+		await this.storeBlocks(blocks);
 
 		// Clean up
 		while(await this.checkNonSequentialBlocks() || await this.checkNonConformingProtocol() || await this.setOrphans(PROTOCOL_LEGACY) || await this.setDeleted(PROTOCOL_LEGACY));
 		while(await this.checkNonSequentialBlocks() || await this.checkNonConformingProtocol() || await this.setOrphans(PROTOCOL_STRICT100) || await this.setDeleted(PROTOCOL_STRICT100));
 
 		// Submit outstanding OTS records
-		await this.checkOTS();
+		await this.submitOTS();
+
 		// Check if any have been upgraded
 		await this.checkOTSConfirmations();
+	}
+
+	async getMissingParents(tweets, parent_key = 'quoted_status_id_str') {
+		const already_stored = await this.BlockModel.findAll({
+			where: {
+				id: {
+					[Sequelize.Op.in]: tweets.filter(tweet => { return tweet[parent_key]; }).map(tweet => { return tweet[parent_key]; }),
+				},
+			},
+		});
+
+		return tweets.filter((tweet) => {
+			if(tweet.deleted) {
+				// console.log(`Block not missing due to deleted`);
+				return false;
+			}
+
+			// For top level genesis tweets
+			if(!tweet[parent_key] || tweet[parent_key] === null || tweet[parent_key] === undefined) {
+				// console.log(`Block not missing due to no tweet id`);
+				return false;
+			}
+
+			if(tweets.some((parent_block) => {
+				return parent_block.deleted || (parent_block.id_str === tweet[parent_key]);
+			})) {
+				// console.log(`Block not missing due to found in self`);
+				return false;
+			}
+
+			// console.log(already_stored);
+			if(already_stored.some(stored => { return stored.dataValues.id === tweet[parent_key] })) {
+				// console.log(`Block not missing due to not found in database`);
+				return false;
+			}
+
+			return true;
+		});
+	}
+
+	async getAllTweets(starting_tweet) {
+		let last_tweet = 0;
+
+		if(starting_tweet) last_tweet = { dataValues: { id: starting_tweet, } };
+		if(!last_tweet)
+			last_tweet = await this.BlockModel.find({order: [['id', 'DESC']]});
+		if(!last_tweet)
+			last_tweet = { dataValues: { id: GENESIS_TWEET, } };
+
+		console.log(`Using last tweet: ${last_tweet.dataValues.id}`);
+
+		// Do we need initial sync?
+		let alltweets = await this.getTaggedTweetsSince(last_tweet.dataValues.id);
+		console.log('Total tagged tweets: ' + alltweets.length);
+		console.log('===========================');
+
+		while(true) {
+			// Any missing parents?
+			const missing_quote_parents = await this.getMissingParents(alltweets);
+			const missing_reply_parents = await this.getMissingParents(alltweets, 'in_reply_to_status_id_str');
+			if(!missing_quote_parents.length && !missing_reply_parents.length) break;
+
+			// Determine the missing parents
+			const missing_quote_ids = missing_quote_parents.map((tweet) => {	return tweet.quoted_status_id_str; });
+			const missing_reply_ids = missing_reply_parents.map((tweet) => { return tweet.in_reply_to_status_id_str; });
+			const unique_missing = Array.from(new Set(missing_quote_ids.concat(missing_reply_ids)));
+			console.log('Missing parents: ' + unique_missing.length);
+			console.log(JSON.stringify(unique_missing));
+
+			// Download the missing parents
+			const moar_tweets = await this.twitter.getTweets(Array.from(unique_missing));
+			console.log('Downloaded parents: ' + moar_tweets.length);
+			console.log(JSON.stringify(moar_tweets.map(t => { return t.id_str })));
+
+			// Add stubs for deleted, missing parents
+			if(moar_tweets.length !== unique_missing.length) {
+				// Only add stubs for parents which we dont already have actual records for
+				const parents_deleted = unique_missing.filter((parent_id) => {
+					return !moar_tweets.some((tweet) => { return tweet.id_str === parent_id; });
+				});
+
+				for(const curparent of parents_deleted) {
+					const phantom = {
+						id_str: curparent,
+						quoted_status_id_str: null,
+						deleted: true,
+					};
+					moar_tweets.push(phantom);
+				}
+
+				console.log('Parent tweets have since been deleted: ', parents_deleted.length);
+				console.log(JSON.stringify(parents_deleted));
+			}
+
+			Array.prototype.push.apply(alltweets, moar_tweets);
+			console.log('Total tweets: ' + alltweets.length);
+			console.log('===========================');
+		}
+
+		// Order the missing data so we can insert it properly.
+		alltweets.sort((first, second) => {
+			// console.log(first, second);
+			return (new BigNumber(first.id_str).lt(new BigNumber(second.id_str)) ? -1 : 1);
+		});
+
+		return alltweets;
 	}
 
 	toStandardTweet(tweet) {
 		return {
 			id_str: tweet.id_str,
 			full_text: tweet.full_text,
-			retweet_count: tweet.retweet_count,
-			favorite_count: tweet.favorite_count,
+			retweet_count: tweet.retweet_count || 0,
+			favorite_count: tweet.favorite_count || 0,
 			created_at: tweet.created_at,
-			user: {
+			user: (!tweet.user ? null : {
 				id_str: tweet.user.id_str,
 				name: tweet.user.name,
 				screen_name: tweet.user.screen_name,
 				description: tweet.user.description,
 				verified: tweet.user.verified,
 				created_at: tweet.user.created_at,
-			},
+			}),
 			is_quote_status: tweet.is_quote_status,
 			quoted_status_id_str: tweet.quoted_status_id_str,
 			quoted_status: (!tweet.is_quote_status || !tweet.quoted_status ? null : {
@@ -210,7 +174,7 @@ export default class ValidationService {
 				is_quote_status: tweet.is_quote_status,
 				quoted_status_id_str: tweet.quoted_status_id_str,
 			}),
-			// in_reply_to_status_id_str: tweet.in_reply_to_status_id_str,
+			in_reply_to_status_id_str: tweet.in_reply_to_status_id_str,
 			deleted: tweet.deleted,
 		};
 	}
@@ -227,8 +191,6 @@ export default class ValidationService {
 		return {
 			id: stdtweet.id_str,
 			Block_id: stdtweet.quoted_status_id_str,
-			Block_id_reply: tweet.in_reply_to_status_id_str,
-			Twitter_user_id: stdtweet.user.id_str,
 			protocol: protocol,
 			block_number: block_number,
 			text: stdtweet.full_text,
@@ -237,18 +199,19 @@ export default class ValidationService {
 			Twitter_created_at: stdtweet.created_at,
 			Twitter_retweet_count: stdtweet.retweet_count,
 			Twitter_favorite_count: stdtweet.favorite_count,
-			Twitter_user_name: stdtweet.user.name,
-			Twitter_user_screen_name: stdtweet.user.screen_name,
-			Twitter_user_description: stdtweet.user.description,
-			Twitter_user_verified: stdtweet.user.verified,
+			Twitter_user_id: (stdtweet.user ? stdtweet.user.id_str : null),
+			Twitter_user_name: (stdtweet.user ? stdtweet.user.name : null),
+			Twitter_user_screen_name: (stdtweet.user ? stdtweet.user.screen_name : null),
+			Twitter_user_description: (stdtweet.user ? stdtweet.user.description : null),
+			Twitter_user_verified: (stdtweet.user ? stdtweet.user.verified : null),
 			// Twitter_user_followers_count: stdtweet.user.followers_count,
 			// Twitter_user_friends_count: stdtweet.user.friends_count,
-			Twitter_user_created_at: stdtweet.user.created_at,
+			Twitter_user_created_at: (stdtweet.user ? stdtweet.user.created_at : null),
 		};
 	}
 
-	async getTaggedTweetsSince(lastblock) {
-		return (await this.twitter.getHashtagged('twittercoin', lastblock)).statuses;
+	async getTaggedTweetsSince(last_tweet) {
+		return (await this.twitter.getHashtagged('twittercoin', last_tweet)).statuses;
 	}
 
 	async setOrphans(protocol) {
@@ -389,7 +352,7 @@ export default class ValidationService {
 		return blocks.length;
 	}
 
-	async checkOTS() {
+	async submitOTS() {
 		const blocks = await this.BlockModel.findAll({
 			where: {
 				deleted: false,

@@ -7,6 +7,11 @@ const twitter = new TwitterService();
 const ots = new OTSService(db);
 const validator = new ValidationService(db, twitter, ots);
 
+process.on('unhandledRejection', (reason, p) => {
+	console.log('Unhandled Rejection at: Promise', p, 'reason:', reason);
+	// application specific logging, throwing an error, or other logic here
+});
+
 let start = false;
 
 const myArgs = process.argv.slice(2);
