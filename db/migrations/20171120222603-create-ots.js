@@ -9,13 +9,13 @@ module.exports = {
 				type: Sequelize.STRING(64),
 				allowNull: false,
 			},
-			ots: {
-				type: Sequelize.TEXT('medium'),
-				allowNull: false,
-			},
 			data: {
 				type: Sequelize.TEXT('medium'),
 				allowNull: false,
+			},
+			ots: {
+				type: Sequelize.TEXT('medium'),
+				allowNull: true,
 			},
 			upgraded_ots: {
 				type: Sequelize.TEXT('medium'),

@@ -17,15 +17,18 @@ export default class ValidationService {
 		this.ots = ots;
 	}
 
-	async sync() {
-		let lastblock = await this.BlockModel.find({
-			order: [
-				['id', 'DESC'],
-			],
-		}) || { dataValues: { id: GENESIS_TWEET, } };
+	async sync(starting_block) {
+		let lastblock = 0;
 
-		// if(!lastblock)
-		// 	lastblock = ;
+		if(starting_block) lastblock = { dataValues: { id: starting_block, } };
+		if(!lastblock) {
+			lastblock = await this.BlockModel.find({
+						order: [
+							['id', 'DESC'],
+						],
+					})
+				|| { dataValues: { id: GENESIS_TWEET, } };
+		}
 
 		console.log(`Last tweet is ${lastblock.dataValues.id}`);
 
@@ -38,11 +41,11 @@ export default class ValidationService {
 		console.log('Total valid blocks: ' + allblocks.length);
 		console.log('===========================');
 
-		const _get_w_no_parent = async blocks => {
+		const _get_w_no_parent = async ( blocks, parent_key = 'Block_id' ) => {
 			const already_stored = await this.BlockModel.findAll({
 				where: {
 					id: {
-						[Sequelize.Op.in]: blocks.filter(block => { return block.Block_id; }).map(block => { return block.Block_id; }),
+						[Sequelize.Op.in]: blocks.filter(block => { return block[parent_key]; }).map(block => { return block[parent_key]; }),
 					},
 				},
 			});
@@ -54,20 +57,20 @@ export default class ValidationService {
 				}
 
 				// For top level genesis blocks
-				if(!block.Block_id) {
+				if(!block[parent_key]) {
 					// console.log(`Block not missing due to no block id`);
 					return false;
 				}
 
 				if(blocks.some((parent_block) => {
-					return parent_block.deleted || (parent_block.id === block.Block_id);
+					return parent_block.deleted || (parent_block.id === block[parent_key]);
 				})) {
 					// console.log(`Block not missing due to found in self`);
 					return false;
 				}
 
 				// console.log(already_stored);
-				if(already_stored.some(stored => { return stored.dataValues.id === block.Block_id })) {
+				if(already_stored.some(stored => { return stored.dataValues.id === block[parent_key] })) {
 					// console.log(`Block not missing due to not found in database`);
 					return false;
 				}
@@ -77,10 +80,25 @@ export default class ValidationService {
 		};
 
 		let missing = await _get_w_no_parent(allblocks);
+		// This apply doesn't work!
+		Array.prototype.push.apply(missing, await _get_w_no_parent(allblocks, 'Block_id_reply'));
 		while(missing.length) {
 			console.log('Missing parents: ' + missing.length);
 
-			const unique_missing = Array.from(new Set(missing.map((block) => { return block.Block_id; })));
+			const missing_quotes = missing.filter(block => {
+				return (block.Block_id !== null && block.Block_id !== undefined);
+			}).map((block) => {
+				return block.Block_id;
+			});
+
+			const missing_replies = missing.filter(block => {
+				return (block.Block_id_reply!== null && block.Block_id_reply!== undefined);
+			}).map((block) => {
+				return block.Block_id_reply;
+			});
+
+			const unique_missing = Array.from(new Set(missing_quotes.concat(missing_replies)));
+
 			console.log('Unique missing parents: ' + unique_missing.length);
 			console.log(unique_missing);
 
@@ -123,6 +141,7 @@ export default class ValidationService {
 
 			// Any more missing parents?
 			missing = await _get_w_no_parent(allblocks);
+			Array.prototype.push.apply(missing, await _get_w_no_parent(allblocks, 'Block_id_reply'));
 		}
 
 		// Order the missing data so we can insert it properly.
@@ -191,37 +210,40 @@ export default class ValidationService {
 				is_quote_status: tweet.is_quote_status,
 				quoted_status_id_str: tweet.quoted_status_id_str,
 			}),
+			// in_reply_to_status_id_str: tweet.in_reply_to_status_id_str,
+			deleted: tweet.deleted,
 		};
 	}
 
 	toBlock(tweet) {
-		tweet = this.toStandardTweet(tweet);
+		const stdtweet = this.toStandardTweet(tweet);
 
-		const text = this.getText(tweet);
+		const text = this.getText(stdtweet);
 		const block_number = this.getBlockNumber(text);
 		const protocol = this.getProtocol(text);
 		const genesis = (block_number === '0');
-		const valid = this.extract(tweet, protocol, genesis);
+		const valid = this.extract(stdtweet, protocol, genesis);
 
 		return {
-			id: tweet.id_str,
-			Block_id: tweet.quoted_status_id_str,
-			Twitter_user_id: tweet.user.id_str,
+			id: stdtweet.id_str,
+			Block_id: stdtweet.quoted_status_id_str,
+			Block_id_reply: tweet.in_reply_to_status_id_str,
+			Twitter_user_id: stdtweet.user.id_str,
 			protocol: protocol,
 			block_number: block_number,
-			text: tweet.full_text,
-			orphaned: tweet.deleted || !valid || (!genesis && !Boolean(tweet.quoted_status_id_str)),
-			deleted: tweet.deleted,
-			Twitter_created_at: tweet.created_at,
-			Twitter_retweet_count: tweet.retweet_count,
-			Twitter_favorite_count: tweet.favorite_count,
-			Twitter_user_name: tweet.user.name,
-			Twitter_user_screen_name: tweet.user.screen_name,
-			Twitter_user_description: tweet.user.description,
-			Twitter_user_verified: tweet.user.verified,
-			// Twitter_user_followers_count: tweet.user.followers_count,
-			// Twitter_user_friends_count: tweet.user.friends_count,
-			Twitter_user_created_at: tweet.user.created_at,
+			text: stdtweet.full_text,
+			orphaned: stdtweet.deleted || !valid || (!genesis && !Boolean(stdtweet.quoted_status_id_str)),
+			deleted: stdtweet.deleted,
+			Twitter_created_at: stdtweet.created_at,
+			Twitter_retweet_count: stdtweet.retweet_count,
+			Twitter_favorite_count: stdtweet.favorite_count,
+			Twitter_user_name: stdtweet.user.name,
+			Twitter_user_screen_name: stdtweet.user.screen_name,
+			Twitter_user_description: stdtweet.user.description,
+			Twitter_user_verified: stdtweet.user.verified,
+			// Twitter_user_followers_count: stdtweet.user.followers_count,
+			// Twitter_user_friends_count: stdtweet.user.friends_count,
+			Twitter_user_created_at: stdtweet.user.created_at,
 		};
 	}
 
@@ -396,7 +418,10 @@ export default class ValidationService {
 	async checkOTSConfirmations() {
 		const ots_records = await this.OTSModel.findAll({
 			where: {
-				upgraded_ots: null,
+				[Sequelize.Op.or]: [
+					{ upgraded_ots: null },
+					{ upgraded_ots: { [Sequelize.Op.eq]: Sequelize.col('ots')} },
+				],
 			},
 		}).map(async record => {
 			return {
